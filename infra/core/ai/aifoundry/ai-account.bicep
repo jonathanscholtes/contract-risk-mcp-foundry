@@ -7,8 +7,8 @@ param customSubdomain string
 @description('Resource ID of the Azure Storage Account')
 param storageAccountResourceId string
 
-@description('Resource ID of the Azure AI Search service')
-param aiSearchResourceId string
+// @description('Resource ID of the Azure AI Search service')
+// param aiSearchResourceId string
 
 @description('the Application Insights instance used for monitoring')
 param appInsightsName string
@@ -16,11 +16,11 @@ param appInsightsName string
 // Extract the storage account name from the resource ID
 var storageAccountName = last(split(storageAccountResourceId, '/'))
 
-var searchServiceName = last(split(aiSearchResourceId, '/'))
+// var searchServiceName = last(split(aiSearchResourceId, '/'))
 
 
 
-var aiSearchConnectionName = '${accountName}-connection-AzureAISearch'
+// var aiSearchConnectionName = '${accountName}-connection-AzureAISearch'
 var storageConnectionName = '${accountName}-connection-Storage'
 var appInsightConnectionName = '${accountName}-connection-AppInsight'
 
@@ -88,23 +88,23 @@ resource appInsightsConnection 'Microsoft.CognitiveServices/accounts/connections
 
 
 
-resource aiSearchConnection 'Microsoft.CognitiveServices/accounts/connections@2025-06-01' = {
-  parent: account
-  name: aiSearchConnectionName
-  properties: {
-    category: 'CognitiveSearch'
-    target: 'https://${searchServiceName}.search.windows.net/'
-    authType: 'ApiKey'
-    isSharedToAll: true
-    credentials: {
-      key: '${listAdminKeys(aiSearchResourceId, '2021-04-01-preview').primaryKey}'
-    }
-    metadata: {
-      ApiType: 'Azure'
-      ResourceId: aiSearchResourceId
-    }
-  }
-}
+// resource aiSearchConnection 'Microsoft.CognitiveServices/accounts/connections@2025-06-01' = {
+//   parent: account
+//   name: aiSearchConnectionName
+//   properties: {
+//     category: 'CognitiveSearch'
+//     target: 'https://${searchServiceName}.search.windows.net/'
+//     authType: 'ApiKey'
+//     isSharedToAll: true
+//     credentials: {
+//       key: '${listAdminKeys(aiSearchResourceId, '2021-04-01-preview').primaryKey}'
+//     }
+//     metadata: {
+//       ApiType: 'Azure'
+//       ResourceId: aiSearchResourceId
+//     }
+//   }
+// }
 
 
 resource storageConnection 'Microsoft.CognitiveServices/accounts/connections@2025-06-01' = {

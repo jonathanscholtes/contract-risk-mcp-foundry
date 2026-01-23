@@ -38,6 +38,9 @@ param dnsServiceIp string = '10.0.0.10'
 @description('Enable Azure RBAC for Kubernetes authorization')
 param enableAzureRbac bool = true
 
+@description('User Object ID for RBAC assignment')
+param userObjectId string = ''
+
 resource aks 'Microsoft.ContainerService/managedClusters@2024-06-01' = {
   name: clusterName
   location: location
@@ -91,6 +94,21 @@ resource aks 'Microsoft.ContainerService/managedClusters@2024-06-01' = {
   }
 }
 
+// Azure Kubernetes Service RBAC Cluster Admin role - Azure Kubernetes Service RBAC Cluster Admin
+var aksRbacClusterAdminRole = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b1ff04bb-8a4e-4dc4-8eb5-8693973ce19b')
+
+// Grant user cluster admin access if userObjectId is provided
+resource userRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(userObjectId)) {
+  name: guid(aks.id, userObjectId, aksRbacClusterAdminRole)
+  scope: aks
+  properties: {
+    roleDefinitionId: aksRbacClusterAdminRole
+    principalId: userObjectId
+    principalType: 'User'
+  }
+}
+
+output aksName string = aks.name
 output aksResourceId string = aks.id
 output aksFqdn string = aks.properties.fqdn
 output aksOidcIssuerUrl string = aks.properties.oidcIssuerProfile.issuerURL

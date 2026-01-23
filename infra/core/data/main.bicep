@@ -20,6 +20,9 @@ param location string
 @description('Name of the User Assigned Managed Identity to assign to deployed services')
 param identityName string
 
+@description('Optional: Azure AD Object ID of the deploying user for CosmosDB access')
+param userObjectId string = ''
+
 var storageAccountName ='sa${projectName}${resourceToken}'
 
 module storage 'storage/main.bicep' = {
@@ -40,6 +43,7 @@ module cosmosDb 'cosmosdb/main.bicep' = {
     location: location
     databaseName: 'audit-poc'
     identityName: identityName
+    userObjectId: userObjectId
     containers: [
   {
     name: 'vendors' // Container for storing chat sessions and messages (chat history)

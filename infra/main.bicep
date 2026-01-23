@@ -23,6 +23,9 @@ param location string
 @description('Azure region where all AI resources will be deployed (e.g., "eastus")')
 param AIlocation string
 
+@description('Optional: Azure AD Object ID of the deploying user for CosmosDB access')
+param userObjectId string = ''
+
 resource resourceGroup 'Microsoft.Resources/resourceGroups@2024-03-01' = {
   name: 'rg-${projectName}-${environmentName}-${location}-${resourceToken}'
   location: location
@@ -60,6 +63,7 @@ module data 'core/data/main.bicep' = {
     environmentName:environmentName
     location: location
     identityName:security.outputs.managedIdentityName
+    userObjectId: userObjectId
   }
 }
 
@@ -69,7 +73,7 @@ module platform 'core/platform/main.bicep' = {
   params: { 
     containerRegistryName: 'cr${projectName}${environmentName}${resourceToken}'
     location:location
-
+    userObjectId: userObjectId
   }
 }
 
@@ -104,5 +108,5 @@ output keyVaultName string = security.outputs.keyVaultName
 output OpenAIEndPoint string = ai.outputs.OpenAIEndPoint 
 output aiAccountEndpoint string = ai.outputs.aiservicesTarget
 output cosmosdbEndpoint string = data.outputs.cosmosdbEndpoint
-output searchServicename string = ai.outputs.searchServicename
 output containerRegistryName string = platform.outputs.containerRegistryName
+output aksName string = platform.outputs.aksName

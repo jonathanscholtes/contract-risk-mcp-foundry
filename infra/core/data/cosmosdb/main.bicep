@@ -8,6 +8,9 @@ param tags object = {}
 
 param identityName string
 
+@description('Optional: Azure AD Object ID of the deploying user for CosmosDB access')
+param userObjectId string = ''
+
 // Define the database for the chat application
 var database = {
   name: databaseName
@@ -51,6 +54,7 @@ module cosmosDbAccount 'account.bicep' = {
     enableServerless: true
     enableVectorSearch: true
     identityName: identityName
+    userObjectId: userObjectId
   }
 }
 

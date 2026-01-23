@@ -18,6 +18,9 @@ param kind string = 'GlobalDocumentDB'
 
 param identityName string
 
+@description('Optional: Azure AD Object ID of the deploying user for CosmosDB access')
+param userObjectId string = ''
+
 
 resource managedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' existing= {
   name: identityName
@@ -71,8 +74,11 @@ resource account 'Microsoft.DocumentDB/databaseAccounts@2023-04-15' = {
 // Deterministic GUID for role definition
 var roleDefinitionGuid = guid('sql-role-definition', account.name, managedIdentity.name)
 
-// Deterministic GUID for role assignment
+// Deterministic GUID for role assignment (managed identity)
 var roleAssignmentGuid = guid('sql-role-assignment', account.name, managedIdentity.name)
+
+// Deterministic GUID for role assignment (user)
+var userRoleAssignmentGuid = guid('sql-role-assignment-user', account.name, userObjectId)
 
 
 
@@ -111,6 +117,16 @@ resource cosmosDbRoleAssignment 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAs
   properties: {
     roleDefinitionId: cosmosDbRoleDefinition.id
     principalId: managedIdentity.properties.principalId
+    scope: account.id
+  }
+}
+
+resource cosmosDbUserRoleAssignment 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-11-15' = if (!empty(userObjectId)) {
+  parent: account
+  name: userRoleAssignmentGuid
+  properties: {
+    roleDefinitionId: cosmosDbRoleDefinition.id
+    principalId: userObjectId
     scope: account.id
   }
 }

@@ -17,8 +17,8 @@ param identityName string
 @description('the Application Insights instance used for monitoring')
 param appInsightsName string
 
-@description('Resource ID of the Azure AI Search service')
-param searchServiceId string
+// @description('Resource ID of the Azure AI Search service')
+// param searchServiceId string
 
 @description('Resource ID of the Azure Storage Account used by the solution')
 param storageAccountId string
@@ -34,7 +34,7 @@ module aiaccount 'ai-account.bicep' = {
     customSubdomain: 'fnd-${projectName}-${environmentName}-${resourceToken}'
     storageAccountResourceId:storageAccountId
     appInsightsName:appInsightsName
-    aiSearchResourceId:searchServiceId
+  
     
   }
 }

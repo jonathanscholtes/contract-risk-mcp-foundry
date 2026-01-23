@@ -4,6 +4,9 @@ param containerRegistryName string
 @description('Azure region where all resources will be deployed (e.g., "eastus")')
 param location string
 
+@description('User Object ID for RBAC assignment')
+param userObjectId string = ''
+
 
 module containerregistry 'registry/container-registry.bicep' = {
   name: 'containerregistry'
@@ -20,12 +23,12 @@ module akscluster 'aks.bicep' = {
   params: {
     clusterName: 'aievacluster'
     location: location
-
+    userObjectId: userObjectId
   }
-
 }
 
 
 
 output containerRegistryID string = containerregistry.outputs.containerRegistryID
 output containerRegistryName string = containerregistry.outputs.containerRegistryName
+output aksName string = akscluster.outputs.aksName

@@ -24,16 +24,7 @@ param storageAccountId string
 param searchServicename string
 
 
-module search 'aisearch/main.bicep' = { 
-  name: 'aisearch'
-  params: {
-  location:location
-  managedIdentityName: identityName
-  searchServicename: searchServicename
 
-  }
-
-}
 
 module aifoundry 'aifoundry/main.bicep' = {
   name: 'aifoundry'
@@ -45,7 +36,7 @@ module aifoundry 'aifoundry/main.bicep' = {
     resourceToken: resourceToken
     appInsightsName:appInsightsName
     storageAccountId:storageAccountId
-    searchServiceId: search.outputs.searchServiceId
+
   }
 
 }
@@ -54,5 +45,5 @@ module aifoundry 'aifoundry/main.bicep' = {
 output aiservicesTarget string = aifoundry.outputs.aiservicesTarget
 output OpenAIEndPoint string = aifoundry.outputs.OpenAIEndPoint
 output aiProjectEndpoint string = aifoundry.outputs.aiProjectEndpoint
-output searchServicename string = searchServicename
+
 
