@@ -93,7 +93,7 @@ try {
 }
 
 if ($missingTools.Count -gt 0) {
-    Write-Host "`n❌ Missing required tools: $($missingTools -join ', ')" -ForegroundColor Red
+    Write-Host "`n[X] Missing required tools: $($missingTools -join ', ')" -ForegroundColor Red
     Write-Host "`nInstallation instructions:" -ForegroundColor Yellow
     
     if ($missingTools -contains "kubectl") {
@@ -202,11 +202,25 @@ az aks get-credentials --resource-group $resourceGroupName --name $aksName --ove
 Write-Host "Configuring kubectl to use Azure CLI authentication..." -ForegroundColor Yellow
 kubelogin convert-kubeconfig -l azurecli
 
+# Fix Docker credential helper issue for Helm (when Docker not installed)
+$dockerConfigPath = "$env:USERPROFILE\.docker\config.json"
+$dockerConfigDir = "$env:USERPROFILE\.docker"
+
+if (Test-Path $dockerConfigPath) {
+    Write-Host "Removing Docker credential helper configuration..." -ForegroundColor Yellow
+    Remove-Item $dockerConfigPath -Force
+    Write-Host "Docker config removed for Helm compatibility" -ForegroundColor Green
+} elseif (Test-Path $dockerConfigDir) {
+    # Directory exists but no config - create empty one
+    Write-Host "Creating minimal Docker config for Helm..." -ForegroundColor Yellow
+    '{}' | Set-Content $dockerConfigPath -Encoding utf8
+}
+
 # Deploy Helm charts
 Write-Host "`n1. Deploying Platform (Monitoring)..." -ForegroundColor Magenta
 helm upgrade --install platform .\k8s\helm\platform `
     --namespace platform --create-namespace `
-    --wait
+    --wait --timeout 10m
 
 Write-Host "`n2. Deploying RabbitMQ..." -ForegroundColor Magenta
 helm repo add bitnami https://charts.bitnami.com/bitnami
@@ -217,7 +231,7 @@ helm upgrade --install rabbitmq bitnami/rabbitmq `
     --set auth.password=password `
     --set metrics.enabled=true `
     --set metrics.serviceMonitor.enabled=true `
-    --wait
+    --wait --timeout 10m
 
 Write-Host "`n3. Deploying MCP Tools..." -ForegroundColor Magenta
 helm upgrade --install mcp-tools .\k8s\helm\mcp-tools `
@@ -225,21 +239,21 @@ helm upgrade --install mcp-tools .\k8s\helm\mcp-tools `
     --set registry=$acrLoginServer `
     --set foundryAgent.endpoint=$aiAccountEndpoint `
     --set foundryAgent.apiKey="PLACEHOLDER-UPDATE-IN-K8S-SECRET" `
-    --wait
+    --wait --timeout 10m
 
 Write-Host "`n4. Deploying Risk Workers..." -ForegroundColor Magenta
 helm upgrade --install risk-workers .\k8s\helm\risk-workers `
     --namespace workers --create-namespace `
     --set registry=$acrLoginServer `
-    --wait
+    --wait --timeout 10m
 
 Write-Host "`n=== Deployment Summary ===" -ForegroundColor Cyan
-Write-Host "✅ Azure Infrastructure deployed" -ForegroundColor Green
-Write-Host "✅ Container images built and pushed to ACR" -ForegroundColor Green
-Write-Host "✅ Platform components deployed to AKS" -ForegroundColor Green
-Write-Host "✅ RabbitMQ deployed" -ForegroundColor Green
-Write-Host "✅ MCP tool servers deployed" -ForegroundColor Green
-Write-Host "✅ Risk workers deployed with KEDA autoscaling" -ForegroundColor Green
+Write-Host "[OK] Azure Infrastructure deployed" -ForegroundColor Green
+Write-Host "[OK] Container images built and pushed to ACR" -ForegroundColor Green
+Write-Host "[OK] Platform components deployed to AKS" -ForegroundColor Green
+Write-Host "[OK] RabbitMQ deployed" -ForegroundColor Green
+Write-Host "[OK] MCP tool servers deployed" -ForegroundColor Green
+Write-Host "[OK] Risk workers deployed with KEDA autoscaling" -ForegroundColor Green
 
 Write-Host "`n=== Next Steps ===" -ForegroundColor Cyan
 Write-Host "1. Update Foundry agent API key:" -ForegroundColor Yellow

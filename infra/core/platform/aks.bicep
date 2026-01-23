@@ -112,3 +112,4 @@ output aksName string = aks.name
 output aksResourceId string = aks.id
 output aksFqdn string = aks.properties.fqdn
 output aksOidcIssuerUrl string = aks.properties.oidcIssuerProfile.issuerURL
+output aksPrincipalId string = aks.identity.principalId

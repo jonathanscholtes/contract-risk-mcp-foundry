@@ -8,22 +8,21 @@ param location string
 param userObjectId string = ''
 
 
-module containerregistry 'registry/container-registry.bicep' = {
-  name: 'containerregistry'
-  params: {
-    containerRegistryName: containerRegistryName
-    location: location
-
-  }
-
-}
-
 module akscluster 'aks.bicep' = {
   name: 'akscluster'
   params: {
     clusterName: 'aievacluster'
     location: location
     userObjectId: userObjectId
+  }
+}
+
+module containerregistry 'registry/container-registry.bicep' = {
+  name: 'containerregistry'
+  params: {
+    containerRegistryName: containerRegistryName
+    location: location
+    aksPrincipalId: akscluster.outputs.aksPrincipalId
   }
 }
 
