@@ -1,0 +1,50 @@
+# Container registry
+registry: myacr.azurecr.io
+
+# Agent orchestrator configuration
+agentOrchestrator:
+  image: agent-orchestrator
+  tag: 0.1.0
+  replicas: 1
+
+# Foundry agent configuration
+foundryAgent:
+  endpoint: https://your-foundry-endpoint.ai.azure.com/invoke
+  apiKey: "your-api-key"
+
+# Thresholds
+thresholds:
+  fxVarThreshold: "100000"  # $100k
+  irDv01Threshold: "50000"   # $50k
+  marketShockThreshold: "2.0"  # 2%
+
+# MCP service URLs
+mcpServices:
+  contractsUrl: http://mcp-contracts.tools.svc.cluster.local:8000
+  riskUrl: http://mcp-risk.tools.svc.cluster.local:8000
+  marketUrl: http://mcp-market.tools.svc.cluster.local:8000
+
+# MCP Contracts
+mcpContracts:
+  image: mcp-contracts
+  tag: 0.1.0
+  replicas: 2
+
+# MCP Risk
+mcpRisk:
+  image: mcp-risk
+  tag: 0.1.0
+  replicas: 2
+
+# MCP Market
+mcpMarket:
+  image: mcp-market
+  tag: 0.1.0
+  replicas: 2
+
+# RabbitMQ connection
+rabbitmq:
+  host: rabbitmq.rabbitmq.svc.cluster.local
+  port: 5672
+  user: user
+  password: password

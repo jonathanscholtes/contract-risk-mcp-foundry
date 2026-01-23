@@ -1,0 +1,5 @@
+apiVersion: v2
+name: mcp-tools
+description: MCP tool servers (contracts, risk, market)
+version: 0.1.0
+appVersion: "1.0"

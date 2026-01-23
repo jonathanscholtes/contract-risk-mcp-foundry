@@ -1,0 +1,21 @@
+# Container registry
+registry: myacr.azurecr.io
+
+# Risk worker configuration
+riskWorker:
+  image: risk-worker
+  tag: 0.1.0
+  replicas: 2
+  maxReplicas: 10
+
+# RabbitMQ connection
+rabbitmq:
+  host: rabbitmq.rabbitmq.svc.cluster.local
+  port: 5672
+  user: user
+  password: password
+  queueName: risk.jobs
+
+# KEDA scaling
+keda:
+  queueLength: 10  # Scale up when queue has more than 10 messages

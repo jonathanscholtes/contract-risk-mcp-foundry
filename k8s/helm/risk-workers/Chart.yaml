@@ -1,0 +1,5 @@
+apiVersion: v2
+name: risk-workers
+description: Risk calculation workers with KEDA autoscaling
+version: 0.1.0
+appVersion: "1.0"

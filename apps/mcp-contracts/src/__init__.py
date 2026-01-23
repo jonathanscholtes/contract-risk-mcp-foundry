@@ -1,0 +1,1 @@
+"""MCP Contracts Server package."""
