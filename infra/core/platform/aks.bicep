@@ -39,14 +39,20 @@ param dnsServiceIp string = '10.0.0.10'
 param enableAzureRbac bool = true
 
 @description('User Object ID for RBAC assignment')
-param userObjectId string = ''
+param userObjectId string 
+
+@description('User-assigned managed identity resource ID for AKS')
+param managedIdentityId string
 
 resource aks 'Microsoft.ContainerService/managedClusters@2024-06-01' = {
   name: clusterName
   location: location
 
   identity: {
-    type: 'SystemAssigned'
+    type: empty(managedIdentityId) ? 'SystemAssigned' : 'UserAssigned'
+    userAssignedIdentities: empty(managedIdentityId) ? null : {
+      '${managedIdentityId}': {}
+    }
   }
 
   properties: {
@@ -91,6 +97,24 @@ resource aks 'Microsoft.ContainerService/managedClusters@2024-06-01' = {
       loadBalancerSku: 'standard'
       outboundType: 'loadBalancer'
     }
+
+    // Enable KEDA workload autoscaler add-on
+    workloadAutoScalerProfile: {
+      keda: {
+        enabled: true
+      }
+    }
+
+    // Enable Azure Key Vault Secrets Provider (optional - for pod secret access)
+    addonProfiles: {
+      azureKeyvaultSecretsProvider: {
+        enabled: true
+        config: {
+          enableSecretRotation: 'true'
+          rotationPollInterval: '2m'
+        }
+      }
+    }
   }
 }
 
@@ -112,4 +136,4 @@ output aksName string = aks.name
 output aksResourceId string = aks.id
 output aksFqdn string = aks.properties.fqdn
 output aksOidcIssuerUrl string = aks.properties.oidcIssuerProfile.issuerURL
-output aksPrincipalId string = aks.identity.principalId
+output aksPrincipalId string = empty(managedIdentityId) ? aks.identity.principalId : aks.identity.userAssignedIdentities[managedIdentityId].principalId

@@ -8,7 +8,7 @@ param tags object = {}
 
 param identityName string
 
-@description('Optional: Azure AD Object ID of the deploying user for CosmosDB access')
+@description('Azure AD Object ID of the deploying user for CosmosDB access')
 param userObjectId string = ''
 
 // Define the database for the chat application

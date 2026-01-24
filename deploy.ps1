@@ -1,8 +1,8 @@
 param (
     [string]$Subscription,
     [string]$Location = "eastus2",
-    [string]$AILocation,
-    [string]$UserObjectId
+    [string]$UserObjectId,
+    [string]$AILocation
 )
 
 # Set UTF-8 encoding for proper Unicode character display
@@ -14,6 +14,10 @@ if (-not $AILocation) {
     $AILocation = $Location
 }
 
+if (-not $UserObjectId) {
+    Write-Host "User Object ID not provided. Key Vault access role will not be assigned to the deploying user." -ForegroundColor Yellow
+    $UserObjectId = ""
+}
 
 Write-Host "Subscription: $Subscription" -ForegroundColor Cyan
 Write-Host "Location: $Location" -ForegroundColor Cyan
@@ -154,6 +158,35 @@ $cosmosdbEndpoint = $deploymentOutputJsonInfra.cosmosdbEndpoint.value
 $containerRegistryName = $deploymentOutputJsonInfra.containerRegistryName.value
 $aksName = $deploymentOutputJsonInfra.aksName.value
 
+# Check if user role was assigned
+if ($deploymentOutputJsonInfra.PSObject.Properties.Name -contains 'userRoleAssigned') {
+    $userRoleAssigned = $deploymentOutputJsonInfra.userRoleAssigned.value
+    $userObjectIdReceived = $deploymentOutputJsonInfra.userObjectIdReceived.value
+    
+    Write-Host "`nKey Vault RBAC Status:" -ForegroundColor Cyan
+    Write-Host "  User Role Assigned: $userRoleAssigned" -ForegroundColor $(if($userRoleAssigned -eq $true){"Green"}else{"Yellow"})
+    Write-Host "  User Object ID: $userObjectIdReceived" -ForegroundColor Gray
+    
+    if ($userRoleAssigned -eq $false -and ![string]::IsNullOrEmpty($UserObjectId)) {
+        Write-Host "`n  Manually assigning Key Vault Secrets User role..." -ForegroundColor Yellow
+        az role assignment create `
+            --role "Key Vault Secrets User" `
+            --assignee-object-id $UserObjectId `
+            --assignee-principal-type User `
+            --scope "/subscriptions/$Subscription/resourceGroups/$resourceGroupName/providers/Microsoft.KeyVault/vaults/$keyVaultName"
+    }
+}
+
+# Wait for RBAC role assignments to propagate
+Write-Host "`nWaiting for Key Vault role assignments to propagate..." -ForegroundColor Yellow
+Write-Host "This typically takes 1-2 minutes..." -ForegroundColor Gray
+Start-Sleep -Seconds 120
+
+# Retrieve RabbitMQ credentials from Key Vault
+Write-Host "`nRetrieving RabbitMQ credentials from Key Vault..." -ForegroundColor Yellow
+$rabbitmqUsername = az keyvault secret show --vault-name $keyVaultName --name "rabbitmq-username" --query value -o tsv
+$rabbitmqPassword = az keyvault secret show --vault-name $keyVaultName --name "rabbitmq-password" --query value -o tsv
+
 Write-Host "=== Building Images for Containers ===" -ForegroundColor Cyan
 Write-Host "Using ACR: $containerRegistryName" -ForegroundColor White
 Write-Host "Resource Group: $resourceGroupName`n" -ForegroundColor White
@@ -216,6 +249,37 @@ if (Test-Path $dockerConfigPath) {
     '{}' | Set-Content $dockerConfigPath -Encoding utf8
 }
 
+# Function to retry Helm commands on network failures
+function Invoke-HelmWithRetry {
+    param (
+        [string]$CommandDescription,
+        [scriptblock]$Command,
+        [int]$MaxRetries = 3,
+        [int]$DelaySeconds = 10
+    )
+    
+    for ($i = 1; $i -le $MaxRetries; $i++) {
+        try {
+            Write-Host "Attempt $i of $MaxRetries..." -ForegroundColor Gray
+            & $Command
+            if ($LASTEXITCODE -eq 0) {
+                return $true
+            }
+        }
+        catch {
+            Write-Host "Error: $_" -ForegroundColor Yellow
+        }
+        
+        if ($i -lt $MaxRetries) {
+            Write-Host "Retrying in $DelaySeconds seconds..." -ForegroundColor Yellow
+            Start-Sleep -Seconds $DelaySeconds
+        }
+    }
+    
+    Write-Host "Failed after $MaxRetries attempts" -ForegroundColor Red
+    return $false
+}
+
 # Deploy Helm charts
 Write-Host "`n1. Deploying Platform (Monitoring)..." -ForegroundColor Magenta
 helm upgrade --install platform .\k8s\helm\platform `
@@ -223,20 +287,31 @@ helm upgrade --install platform .\k8s\helm\platform `
     --wait --timeout 10m
 
 Write-Host "`n2. Deploying RabbitMQ..." -ForegroundColor Magenta
-helm repo add bitnami https://charts.bitnami.com/bitnami
+helm repo add bitnami https://charts.bitnami.com/bitnami 2>$null
 helm repo update
-helm upgrade --install rabbitmq bitnami/rabbitmq `
-    --namespace rabbitmq --create-namespace `
-    --set auth.username=user `
-    --set auth.password=password `
-    --set metrics.enabled=true `
-    --set metrics.serviceMonitor.enabled=true `
-    --wait --timeout 10m
+
+$success = Invoke-HelmWithRetry -CommandDescription "Deploy RabbitMQ" -Command {
+    helm upgrade --install rabbitmq bitnami/rabbitmq `
+        --namespace rabbitmq --create-namespace `
+        --values .\k8s\helm\rabbitmq-values.yaml `
+        --set auth.username=$rabbitmqUsername `
+        --set auth.password=$rabbitmqPassword `
+        --wait --timeout 10m
+}
+
+if (-not $success) {
+    Write-Host "RabbitMQ deployment failed. Exiting." -ForegroundColor Red
+    exit 1
+}
 
 Write-Host "`n3. Deploying MCP Tools..." -ForegroundColor Magenta
 helm upgrade --install mcp-tools .\k8s\helm\mcp-tools `
     --namespace tools --create-namespace `
     --set registry=$acrLoginServer `
+    --set agentOrchestrator.tag=latest `
+    --set mcpContracts.tag=latest `
+    --set mcpRisk.tag=latest `
+    --set mcpMarket.tag=latest `
     --set foundryAgent.endpoint=$aiAccountEndpoint `
     --set foundryAgent.apiKey="PLACEHOLDER-UPDATE-IN-K8S-SECRET" `
     --wait --timeout 10m
@@ -245,6 +320,7 @@ Write-Host "`n4. Deploying Risk Workers..." -ForegroundColor Magenta
 helm upgrade --install risk-workers .\k8s\helm\risk-workers `
     --namespace workers --create-namespace `
     --set registry=$acrLoginServer `
+    --set image.tag=latest `
     --wait --timeout 10m
 
 Write-Host "`n=== Deployment Summary ===" -ForegroundColor Cyan

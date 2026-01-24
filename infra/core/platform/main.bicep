@@ -5,7 +5,10 @@ param containerRegistryName string
 param location string
 
 @description('User Object ID for RBAC assignment')
-param userObjectId string = ''
+param userObjectId string
+
+@description('User-assigned managed identity resource ID')
+param managedIdentityId string
 
 
 module akscluster 'aks.bicep' = {
@@ -14,6 +17,7 @@ module akscluster 'aks.bicep' = {
     clusterName: 'aievacluster'
     location: location
     userObjectId: userObjectId
+    managedIdentityId: managedIdentityId
   }
 }
 
@@ -31,3 +35,4 @@ module containerregistry 'registry/container-registry.bicep' = {
 output containerRegistryID string = containerregistry.outputs.containerRegistryID
 output containerRegistryName string = containerregistry.outputs.containerRegistryName
 output aksName string = akscluster.outputs.aksName
+output aksPrincipalId string = akscluster.outputs.aksPrincipalId

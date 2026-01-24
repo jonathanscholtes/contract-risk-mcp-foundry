@@ -1,0 +1,33 @@
+# RabbitMQ Configuration
+# Credentials are overridden at deployment time from Key Vault
+
+# Let Helm chart use default image tag
+# image:
+#   tag: 4.0.4-debian-12-r3  
+
+persistence:
+  enabled: true
+  size: 8Gi
+
+service:
+  type: ClusterIP
+
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: false  # Using vanilla Prometheus with static scrape config instead
+
+resources:
+  requests:
+    memory: "256Mi"
+    cpu: "250m"
+  limits:
+    memory: "512Mi"
+    cpu: "500m"
+
+replicaCount: 1
+
+# Credentials will be set via --set at deployment time from Key Vault
+# auth:
+#   username: <from-keyvault>
+#   password: <from-keyvault>
