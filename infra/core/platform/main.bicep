@@ -10,11 +10,15 @@ param userObjectId string
 @description('User-assigned managed identity resource ID')
 param managedIdentityId string
 
+@description('User-assigned managed identity name')
+param managedIdentityName string
+
+var clusterName = 'aievacluster'
 
 module akscluster 'aks.bicep' = {
   name: 'akscluster'
   params: {
-    clusterName: 'aievacluster'
+    clusterName: clusterName
     location: location
     userObjectId: userObjectId
     managedIdentityId: managedIdentityId
@@ -26,7 +30,7 @@ module containerregistry 'registry/container-registry.bicep' = {
   params: {
     containerRegistryName: containerRegistryName
     location: location
-    aksPrincipalId: akscluster.outputs.aksPrincipalId
+    kubeletObjectId: akscluster.outputs.kubeletObjectId
   }
 }
 
@@ -36,3 +40,4 @@ output containerRegistryID string = containerregistry.outputs.containerRegistryI
 output containerRegistryName string = containerregistry.outputs.containerRegistryName
 output aksName string = akscluster.outputs.aksName
 output aksPrincipalId string = akscluster.outputs.aksPrincipalId
+output keyVaultSecretsProviderObjectId string = akscluster.outputs.keyVaultSecretsProviderObjectId

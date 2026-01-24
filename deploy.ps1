@@ -152,7 +152,7 @@ $logAnalyticsWorkspaceName = $deploymentOutputJsonInfra.logAnalyticsWorkspaceNam
 $applicationInsightsName = $deploymentOutputJsonInfra.applicationInsightsName.value
 $keyVaultName = $deploymentOutputJsonInfra.keyVaultName.value
 $OpenAIEndPoint = $deploymentOutputJsonInfra.OpenAIEndPoint.value
-$aiAccountEndpoint = $deploymentOutputJsonInfra.aiAccountEndpoint.value
+$aiProjectEndpoint = $deploymentOutputJsonInfra.aiProjectEndpoint.value
 $cosmosdbEndpoint = $deploymentOutputJsonInfra.cosmosdbEndpoint.value
 #$searchServicename = $deploymentOutputJsonInfra.searchServicename.value
 $containerRegistryName = $deploymentOutputJsonInfra.containerRegistryName.value
@@ -312,7 +312,7 @@ helm upgrade --install mcp-tools .\k8s\helm\mcp-tools `
     --set mcpContracts.tag=latest `
     --set mcpRisk.tag=latest `
     --set mcpMarket.tag=latest `
-    --set foundryAgent.endpoint=$aiAccountEndpoint `
+    --set foundryAgent.endpoint=$aiProjectEndpoint `
     --set foundryAgent.apiKey="PLACEHOLDER-UPDATE-IN-K8S-SECRET" `
     --wait --timeout 10m
 
@@ -389,7 +389,7 @@ if ($pythonAvailable -and -not $skipAgentDeployment) {
     $modelDeployment = "gpt-4o"
     
     Write-Host "`nAgent Configuration:" -ForegroundColor Cyan
-    Write-Host "  Project Endpoint: $aiAccountEndpoint" -ForegroundColor White
+    Write-Host "  Project Endpoint: $aiProjectEndpoint" -ForegroundColor White
     Write-Host "  Model Deployment: $modelDeployment" -ForegroundColor White
     Write-Host "  MCP Contracts URL: $mcpContractsUrl" -ForegroundColor White
     Write-Host "  MCP Risk URL: $mcpRiskUrl" -ForegroundColor White
@@ -416,7 +416,7 @@ if ($pythonAvailable -and -not $skipAgentDeployment) {
         Write-Host "`nDeploying autonomous agents to Microsoft Foundry..." -ForegroundColor Yellow
         
         python scripts/deploy_foundry_agents.py `
-            --project-endpoint $aiAccountEndpoint `
+            --project-endpoint $aiProjectEndpoint `
             --model-deployment $modelDeployment `
             --mcp-contracts-url $mcpContractsUrl `
             --mcp-risk-url $mcpRiskUrl `
@@ -427,12 +427,12 @@ if ($pythonAvailable -and -not $skipAgentDeployment) {
         } else {
             Write-Host "`n[WARNING] Foundry agent deployment encountered issues" -ForegroundColor Yellow
             Write-Host "You can deploy agents manually later using:" -ForegroundColor Gray
-            Write-Host "  python scripts/deploy_foundry_agents.py --project-endpoint $aiAccountEndpoint --model-deployment $modelDeployment" -ForegroundColor Gray
+            Write-Host "  python scripts/deploy_foundry_agents.py --project-endpoint $aiProjectEndpoint --model-deployment $modelDeployment" -ForegroundColor Gray
         }
     } else {
         Write-Host "`n[WARNING] MCP services not fully ready. Skipping agent deployment." -ForegroundColor Yellow
         Write-Host "Deploy agents manually after services are ready:" -ForegroundColor Gray
-        Write-Host "  python scripts/deploy_foundry_agents.py --project-endpoint $aiAccountEndpoint --model-deployment $modelDeployment" -ForegroundColor Gray
+        Write-Host "  python scripts/deploy_foundry_agents.py --project-endpoint $aiProjectEndpoint --model-deployment $modelDeployment" -ForegroundColor Gray
     }
 }
 

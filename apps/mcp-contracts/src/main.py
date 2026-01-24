@@ -8,11 +8,16 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / "shared"))
 
 from datetime import date, datetime
 from typing import Dict, List, Optional
+import os
 from mcp.server.fastmcp import FastMCP
 from contracts import Contract, ContractType, CurrencyPair
 
 # Initialize FastMCP server
-mcp = FastMCP("contracts")
+mcp = FastMCP(
+    name="contracts",
+    host="0.0.0.0",
+    port=int(os.environ.get("PORT", 8000)),
+)
 
 # In-memory contract store (in production, use a database)
 contract_store: Dict[str, Contract] = {}
@@ -282,4 +287,4 @@ def list_all_contracts() -> Dict[str, List[Dict]]:
 
 if __name__ == "__main__":
     # Run the MCP server
-    mcp.run()
+    mcp.run(transport="streamable-http")

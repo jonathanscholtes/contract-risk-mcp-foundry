@@ -8,11 +8,17 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / "shared"))
 
 from datetime import datetime
 from typing import Dict, Optional
+
+import os
 from mcp.server.fastmcp import FastMCP
 import random
 
-# Initialize FastMCP server
-mcp = FastMCP("market")
+# Initialize FastMCP server with explicit host/port
+mcp = FastMCP(
+    name="market",
+    host="0.0.0.0",
+    port=int(os.environ.get("PORT", 8000)),
+)
 
 
 # Simulated market data
@@ -159,4 +165,4 @@ def reset_market_data() -> Dict[str, str]:
 
 if __name__ == "__main__":
     # Run the MCP server
-    mcp.run()
+    mcp.run(transport="streamable-http")

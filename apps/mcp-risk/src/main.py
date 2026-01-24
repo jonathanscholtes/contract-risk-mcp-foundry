@@ -16,7 +16,11 @@ import json
 import asyncio
 
 # Initialize FastMCP server
-mcp = FastMCP("risk")
+mcp = FastMCP(
+    name="risk",
+    host="0.0.0.0",
+    port=int(os.environ.get("PORT", 8000)),
+)
 
 # RabbitMQ configuration
 RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "rabbitmq")
@@ -246,4 +250,4 @@ if __name__ == "__main__":
     loop.create_task(consume_results())
     
     # Run the MCP server
-    mcp.run()
+    mcp.run(transport="streamable-http")

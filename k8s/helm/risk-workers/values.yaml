@@ -4,7 +4,7 @@ registry: myacr.azurecr.io
 # Risk worker configuration
 riskWorker:
   image: risk-worker
-  tag: 0.1.0
+  tag: latest
   replicas: 2
   maxReplicas: 10
 

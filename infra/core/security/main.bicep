@@ -10,6 +10,9 @@ param location string
 @description('User Object ID for Key Vault secret access')
 param userObjectId string
 
+@description('AKS Key Vault Secrets Provider identity object ID (optional)')
+param keyVaultSecretsProviderObjectId string = ''
+
 
 module managedIdentity 'managed-identity.bicep' = {
   name: 'managed-identity'
@@ -34,6 +37,7 @@ module securiyRoles 'security-roles.bicep' = {
     keyVaultName: keyVaultName
     managedIdentityName: managedIdentityName
     userObjectId: userObjectId
+    keyVaultSecretsProviderObjectId: keyVaultSecretsProviderObjectId
   }
   dependsOn: [keyVault,managedIdentity]
 }

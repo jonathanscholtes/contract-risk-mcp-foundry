@@ -31,18 +31,24 @@ resource resourceGroup 'Microsoft.Resources/resourceGroups@2024-03-01' = {
   location: location
 }
 
-
-module security 'core/security/main.bicep' = {
-  name: 'security'
+// Create managed identity first
+module managedIdentityModule 'core/security/managed-identity.bicep' = {
+  name: 'managed-identity'
   scope: resourceGroup
-  params:{
-    keyVaultName: 'kv${projectName}${resourceToken}'
-    managedIdentityName: 'id-${projectName}-${environmentName}'
+  params: {
+    name: 'id-${projectName}-${environmentName}'
     location: location
-    userObjectId: userObjectId
-
   }
+}
 
+// Create Key Vault
+module keyVaultModule 'core/security/keyvault.bicep' = {
+  name: 'keyVault'
+  scope: resourceGroup
+  params: {
+    location: location
+    keyVaultName: 'kv${projectName}${resourceToken}'
+  }
 }
 
 module monitor 'core/monitor/main.bicep' = { 
@@ -64,7 +70,7 @@ module data 'core/data/main.bicep' = {
     resourceToken:resourceToken
     environmentName:environmentName
     location: location
-    identityName:security.outputs.managedIdentityName
+    identityName:managedIdentityModule.outputs.managedIdentityName
     userObjectId: userObjectId
   }
 }
@@ -76,9 +82,22 @@ module platform 'core/platform/main.bicep' = {
     containerRegistryName: 'cr${projectName}${environmentName}${resourceToken}'
     location:location
     userObjectId: userObjectId
-    managedIdentityId: security.outputs.managedIdentityId
+    managedIdentityId: managedIdentityModule.outputs.managedIdentityId
+    managedIdentityName: managedIdentityModule.outputs.managedIdentityName
   }
+}
 
+// Configure Key Vault access after AKS is created
+module securityRoles 'core/security/security-roles.bicep' = {
+  name: 'security-roles'
+  scope: resourceGroup
+  params: {
+    keyVaultName: 'kv${projectName}${resourceToken}'
+    managedIdentityName: 'id-${projectName}-${environmentName}'
+    userObjectId: userObjectId
+    keyVaultSecretsProviderObjectId: platform.outputs.keyVaultSecretsProviderObjectId
+  }
+  dependsOn: [keyVaultModule, managedIdentityModule, platform]
 }
 
 
@@ -91,7 +110,7 @@ module ai 'core/ai/main.bicep' = {
     resourceToken:resourceToken
     location: AIlocation
     appInsightsName: monitor.outputs.applicationInsightsName
-    identityName:security.outputs.managedIdentityName
+    identityName:managedIdentityModule.outputs.managedIdentityName
     storageAccountId:data.outputs.storageAccountId
   searchServicename: 'srch-${projectName}-${environmentName}-${resourceToken}'
   }
@@ -103,14 +122,14 @@ module ai 'core/ai/main.bicep' = {
 
 
 
-output managedIdentityName string = security.outputs.managedIdentityName
+output managedIdentityName string = managedIdentityModule.outputs.managedIdentityName
 output resourceGroupName string = resourceGroup.name
 output storageAccountName string = data.outputs.storageAccountName 
 output logAnalyticsWorkspaceName string = monitor.outputs.logAnalyticsWorkspaceName
 output applicationInsightsName string = monitor.outputs.applicationInsightsName
-output keyVaultName string = security.outputs.keyVaultName
+output keyVaultName string = keyVaultModule.outputs.keyVaultName
 output OpenAIEndPoint string = ai.outputs.OpenAIEndPoint 
-output aiAccountEndpoint string = ai.outputs.aiservicesTarget
+output aiProjectEndpoint string = ai.outputs.aiProjectEndpoint
 output cosmosdbEndpoint string = data.outputs.cosmosdbEndpoint
 output containerRegistryName string = platform.outputs.containerRegistryName
 output aksName string = platform.outputs.aksName

@@ -4,6 +4,9 @@ param keyVaultName string
 @description('User Object ID for secret read access')
 param userObjectId string
 
+@description('AKS Key Vault Secrets Provider identity object ID (optional)')
+param keyVaultSecretsProviderObjectId string = ''
+
 resource managedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' existing= {
   name: managedIdentityName
 }
@@ -51,6 +54,17 @@ resource roleUserAssignment 'Microsoft.Authorization/roleAssignments@2020-04-01-
   }
   scope:keyVault
   dependsOn:[keyVault]
+}
+
+// Grant AKS Key Vault Secrets Provider access to Key Vault
+resource kvSecretsProviderRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(keyVaultSecretsProviderObjectId)) {
+  name: guid(keyVault.id, keyVaultSecretsProviderObjectId, keyVaultSecretsUserRole)
+  scope: keyVault
+  properties: {
+    roleDefinitionId: keyVaultSecretsUserRole
+    principalId: keyVaultSecretsProviderObjectId
+    principalType: 'ServicePrincipal'
+  }
 }
 
 output userRoleAssigned bool = !empty(userObjectId)

@@ -137,3 +137,5 @@ output aksResourceId string = aks.id
 output aksFqdn string = aks.properties.fqdn
 output aksOidcIssuerUrl string = aks.properties.oidcIssuerProfile.issuerURL
 output aksPrincipalId string = empty(managedIdentityId) ? aks.identity.principalId : aks.identity.userAssignedIdentities[managedIdentityId].principalId
+output kubeletObjectId string = aks.properties.identityProfile.kubeletIdentity.objectId
+output keyVaultSecretsProviderObjectId string = aks.properties.addonProfiles.azureKeyvaultSecretsProvider.identity.objectId
