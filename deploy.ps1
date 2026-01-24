@@ -441,6 +441,8 @@ helm upgrade --install risk-workers .\k8s\helm\risk-workers `
     --namespace workers --create-namespace `
     --set registry=$acrLoginServer `
     --set image.tag=latest `
+    --set rabbitmq.user=$rabbitmqUsername `
+    --set rabbitmq.password=$rabbitmqPassword `
     --wait --timeout 10m
 
 Write-Host "`n=== Deployment Summary ===" -ForegroundColor Cyan
