@@ -158,29 +158,29 @@ $cosmosdbEndpoint = $deploymentOutputJsonInfra.cosmosdbEndpoint.value
 $containerRegistryName = $deploymentOutputJsonInfra.containerRegistryName.value
 $aksName = $deploymentOutputJsonInfra.aksName.value
 
-# Check if user role was assigned
-if ($deploymentOutputJsonInfra.PSObject.Properties.Name -contains 'userRoleAssigned') {
-    $userRoleAssigned = $deploymentOutputJsonInfra.userRoleAssigned.value
-    $userObjectIdReceived = $deploymentOutputJsonInfra.userObjectIdReceived.value
+# # Check if user role was assigned
+# if ($deploymentOutputJsonInfra.PSObject.Properties.Name -contains 'userRoleAssigned') {
+#     $userRoleAssigned = $deploymentOutputJsonInfra.userRoleAssigned.value
+#     $userObjectIdReceived = $deploymentOutputJsonInfra.userObjectIdReceived.value
     
-    Write-Host "`nKey Vault RBAC Status:" -ForegroundColor Cyan
-    Write-Host "  User Role Assigned: $userRoleAssigned" -ForegroundColor $(if($userRoleAssigned -eq $true){"Green"}else{"Yellow"})
-    Write-Host "  User Object ID: $userObjectIdReceived" -ForegroundColor Gray
+#     Write-Host "`nKey Vault RBAC Status:" -ForegroundColor Cyan
+#     Write-Host "  User Role Assigned: $userRoleAssigned" -ForegroundColor $(if($userRoleAssigned -eq $true){"Green"}else{"Yellow"})
+#     Write-Host "  User Object ID: $userObjectIdReceived" -ForegroundColor Gray
     
-    if ($userRoleAssigned -eq $false -and ![string]::IsNullOrEmpty($UserObjectId)) {
-        Write-Host "`n  Manually assigning Key Vault Secrets User role..." -ForegroundColor Yellow
-        az role assignment create `
-            --role "Key Vault Secrets User" `
-            --assignee-object-id $UserObjectId `
-            --assignee-principal-type User `
-            --scope "/subscriptions/$Subscription/resourceGroups/$resourceGroupName/providers/Microsoft.KeyVault/vaults/$keyVaultName"
-    }
-}
+#     if ($userRoleAssigned -eq $false -and ![string]::IsNullOrEmpty($UserObjectId)) {
+#         Write-Host "`n  Manually assigning Key Vault Secrets User role..." -ForegroundColor Yellow
+#         az role assignment create `
+#             --role "Key Vault Secrets User" `
+#             --assignee-object-id $UserObjectId `
+#             --assignee-principal-type User `
+#             --scope "/subscriptions/$Subscription/resourceGroups/$resourceGroupName/providers/Microsoft.KeyVault/vaults/$keyVaultName"
+#     }
+# }
 
-# Wait for RBAC role assignments to propagate
-Write-Host "`nWaiting for Key Vault role assignments to propagate..." -ForegroundColor Yellow
-Write-Host "This typically takes 1-2 minutes..." -ForegroundColor Gray
-Start-Sleep -Seconds 120
+# # Wait for RBAC role assignments to propagate
+# Write-Host "`nWaiting for Key Vault role assignments to propagate..." -ForegroundColor Yellow
+# Write-Host "This typically takes 1-2 minutes..." -ForegroundColor Gray
+# Start-Sleep -Seconds 120
 
 # Retrieve RabbitMQ credentials from Key Vault
 Write-Host "`nRetrieving RabbitMQ credentials from Key Vault..." -ForegroundColor Yellow
@@ -315,6 +315,126 @@ helm upgrade --install mcp-tools .\k8s\helm\mcp-tools `
     --set foundryAgent.endpoint=$aiAccountEndpoint `
     --set foundryAgent.apiKey="PLACEHOLDER-UPDATE-IN-K8S-SECRET" `
     --wait --timeout 10m
+
+Write-Host "`nWaiting for LoadBalancer public IPs to be assigned..." -ForegroundColor Yellow
+Write-Host "This may take 2-3 minutes..." -ForegroundColor Gray
+Start-Sleep -Seconds 30
+
+# Function to get external IP for a service
+function Get-ServiceExternalIP {
+    param (
+        [string]$ServiceName,
+        [string]$Namespace = "tools",
+        [int]$MaxWaitSeconds = 180
+    )
+    
+    $waited = 0
+    while ($waited -lt $MaxWaitSeconds) {
+        $externalIP = kubectl get svc $ServiceName -n $Namespace -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>$null
+        if (![string]::IsNullOrEmpty($externalIP) -and $externalIP -ne "<pending>") {
+            return $externalIP
+        }
+        Start-Sleep -Seconds 10
+        $waited += 10
+        Write-Host "  Waiting for $ServiceName IP... ($waited/$MaxWaitSeconds seconds)" -ForegroundColor Gray
+    }
+    return $null
+}
+
+# Get public IPs for MCP services
+Write-Host "`nRetrieving MCP service public IPs..." -ForegroundColor Yellow
+$mcpContractsIP = Get-ServiceExternalIP -ServiceName "mcp-contracts"
+$mcpRiskIP = Get-ServiceExternalIP -ServiceName "mcp-risk"
+$mcpMarketIP = Get-ServiceExternalIP -ServiceName "mcp-market"
+
+if ([string]::IsNullOrEmpty($mcpContractsIP) -or [string]::IsNullOrEmpty($mcpRiskIP) -or [string]::IsNullOrEmpty($mcpMarketIP)) {
+    Write-Host "`n[WARNING] Could not retrieve all MCP service public IPs." -ForegroundColor Yellow
+    Write-Host "Check LoadBalancer status with: kubectl get svc -n tools" -ForegroundColor Gray
+    Write-Host "`nSkipping Foundry agent deployment." -ForegroundColor Yellow
+    $skipAgentDeployment = $true
+} else {
+    Write-Host "`nMCP Service Public IPs:" -ForegroundColor Green
+    Write-Host "  mcp-contracts: $mcpContractsIP" -ForegroundColor White
+    Write-Host "  mcp-risk: $mcpRiskIP" -ForegroundColor White
+    Write-Host "  mcp-market: $mcpMarketIP" -ForegroundColor White
+    $skipAgentDeployment = $false
+}
+
+Write-Host "`n=== Deploying Foundry Agents ===" -ForegroundColor Cyan
+
+# Check if Python is available
+$pythonAvailable = $true
+try {
+    $pythonVersion = python --version 2>&1
+    Write-Host "Python found: $pythonVersion" -ForegroundColor Green
+} catch {
+    Write-Host "Python not found. Skipping Foundry agent deployment." -ForegroundColor Yellow
+    Write-Host "To deploy agents later, run:" -ForegroundColor Gray
+    Write-Host "  python scripts/deploy_foundry_agents.py --project-endpoint <ENDPOINT> --model-deployment <MODEL>" -ForegroundColor Gray
+    $pythonAvailable = $false
+}
+
+if ($pythonAvailable -and -not $skipAgentDeployment) {
+    # Install Python dependencies for agent deployment
+    Write-Host "Installing Python dependencies for agent deployment..." -ForegroundColor Yellow
+    pip install -r scripts/requirements-agents.txt --quiet
+
+    # MCP URLs using public IPs (now that services are deployed with LoadBalancer)
+    # URLs must end with /mcp for http-streamable protocol
+    $mcpContractsUrl = "http://${mcpContractsIP}:8000/mcp"
+    $mcpRiskUrl = "http://${mcpRiskIP}:8000/mcp"
+    $mcpMarketUrl = "http://${mcpMarketIP}:8000/mcp"
+    
+    # Default model deployment name - update this based on your Foundry project
+    $modelDeployment = "gpt-4o"
+    
+    Write-Host "`nAgent Configuration:" -ForegroundColor Cyan
+    Write-Host "  Project Endpoint: $aiAccountEndpoint" -ForegroundColor White
+    Write-Host "  Model Deployment: $modelDeployment" -ForegroundColor White
+    Write-Host "  MCP Contracts URL: $mcpContractsUrl" -ForegroundColor White
+    Write-Host "  MCP Risk URL: $mcpRiskUrl" -ForegroundColor White
+    Write-Host "  MCP Market URL: $mcpMarketUrl" -ForegroundColor White
+    Write-Host ""
+    
+    # Verify MCP services are running before deploying agents
+    Write-Host "Verifying MCP services are running..." -ForegroundColor Yellow
+    $mcpServicesReady = $true
+    $mcpServices = @("mcp-contracts", "mcp-risk", "mcp-market")
+    
+    foreach ($svc in $mcpServices) {
+        $podStatus = kubectl get pods -n tools -l app=$svc -o jsonpath='{.items[0].status.phase}' 2>$null
+        if ($podStatus -eq "Running") {
+            Write-Host " $svc is running" -ForegroundColor Green
+        } else {
+            Write-Host "$svc is not ready (status: $podStatus)" -ForegroundColor Yellow
+            $mcpServicesReady = $false
+        }
+    }
+    
+    if ($mcpServicesReady) {
+        # Deploy Foundry agents now that MCP services are available
+        Write-Host "`nDeploying autonomous agents to Microsoft Foundry..." -ForegroundColor Yellow
+        
+        python scripts/deploy_foundry_agents.py `
+            --project-endpoint $aiAccountEndpoint `
+            --model-deployment $modelDeployment `
+            --mcp-contracts-url $mcpContractsUrl `
+            --mcp-risk-url $mcpRiskUrl `
+            --mcp-market-url $mcpMarketUrl
+
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "`n[OK] Foundry agents deployed successfully" -ForegroundColor Green
+        } else {
+            Write-Host "`n[WARNING] Foundry agent deployment encountered issues" -ForegroundColor Yellow
+            Write-Host "You can deploy agents manually later using:" -ForegroundColor Gray
+            Write-Host "  python scripts/deploy_foundry_agents.py --project-endpoint $aiAccountEndpoint --model-deployment $modelDeployment" -ForegroundColor Gray
+        }
+    } else {
+        Write-Host "`n[WARNING] MCP services not fully ready. Skipping agent deployment." -ForegroundColor Yellow
+        Write-Host "Deploy agents manually after services are ready:" -ForegroundColor Gray
+        Write-Host "  python scripts/deploy_foundry_agents.py --project-endpoint $aiAccountEndpoint --model-deployment $modelDeployment" -ForegroundColor Gray
+    }
+}
 
 Write-Host "`n4. Deploying Risk Workers..." -ForegroundColor Magenta
 helm upgrade --install risk-workers .\k8s\helm\risk-workers `

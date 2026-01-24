@@ -95,7 +95,10 @@ kind: Service
 metadata:
   name: mcp-contracts
   namespace: tools
+  annotations:
+    service.beta.kubernetes.io/azure-load-balancer-internal: "false"
 spec:
+  type: LoadBalancer
   selector:
     app: mcp-contracts
   ports:
@@ -144,7 +147,10 @@ kind: Service
 metadata:
   name: mcp-risk
   namespace: tools
+  annotations:
+    service.beta.kubernetes.io/azure-load-balancer-internal: "false"
 spec:
+  type: LoadBalancer
   selector:
     app: mcp-risk
   ports:
@@ -185,7 +191,10 @@ kind: Service
 metadata:
   name: mcp-market
   namespace: tools
+  annotations:
+    service.beta.kubernetes.io/azure-load-balancer-internal: "false"
 spec:
+  type: LoadBalancer
   selector:
     app: mcp-market
   ports:

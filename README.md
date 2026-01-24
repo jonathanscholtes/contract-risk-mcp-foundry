@@ -84,10 +84,31 @@ This platform continuously monitors a portfolio of financial contracts for **FX 
 
 ### Prerequisites
 
-- AKS cluster (or local Kubernetes via kind/k3d)
+- Azure subscription with AI Foundry access
 - Azure Container Registry (ACR)
-- `kubectl`, `helm`, `docker`
+- `kubectl`, `helm`, Azure CLI
 - Python 3.10+
+
+### Automated Deployment
+
+```powershell
+.\deploy.ps1 `
+    -Subscription 'YOUR_SUBSCRIPTION_NAME' `
+    -Location 'eastus2' `
+    -UserObjectId 'YOUR_USER_OBJECT_ID'
+```
+
+This automated deployment will:
+- ✅ Deploy Azure infrastructure (AKS, Cosmos DB, AI Foundry, ACR)
+- ✅ Build and push container images
+- ✅ Deploy MCP tool servers to AKS
+- ✅ Deploy autonomous agents to Microsoft Foundry
+- ✅ Configure RabbitMQ and workers
+- ✅ Set up monitoring (Prometheus, Grafana, OpenTelemetry)
+
+**📖 For detailed agent deployment documentation, see [AGENTS_DEPLOYMENT.md](AGENTS_DEPLOYMENT.md)**
+
+### Manual Step-by-Step Deployment
 
 ### 1. Bootstrap Cluster
 

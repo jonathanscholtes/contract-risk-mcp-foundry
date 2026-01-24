@@ -1,0 +1,5 @@
+# Requirements for Foundry agent deployment
+azure-ai-projects==2.0.0b2
+azure-ai-agents
+azure-identity>=1.18.0
+python-dotenv>=1.0.0
