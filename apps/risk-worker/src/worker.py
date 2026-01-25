@@ -13,6 +13,29 @@ from datetime import datetime
 from typing import Dict
 import aio_pika
 import numpy as np
+from prometheus_client import Counter, Histogram, Gauge, start_http_server
+
+# Prometheus metrics
+risk_calculations_total = Counter(
+    'risk_calculations_total',
+    'Total number of risk calculations',
+    ['job_type', 'status']
+)
+risk_calculation_duration = Histogram(
+    'risk_calculation_duration_seconds',
+    'Duration of risk calculations',
+    ['job_type']
+)
+risk_var_value = Gauge(
+    'risk_var_value',
+    'Current VaR value for contracts',
+    ['contract_id']
+)
+risk_dv01_value = Gauge(
+    'risk_dv01_value',
+    'Current DV01 value for contracts',
+    ['contract_id']
+)
 
 # RabbitMQ configuration
 RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "rabbitmq")
@@ -103,6 +126,9 @@ async def process_job(job_data: Dict) -> Dict:
     
     print(f"Processing job {job_id} ({job_type}) for contract {contract_id}")
     
+    # Track calculation start time
+    start_time = datetime.utcnow()
+    
     # Simulate some processing time
     await asyncio.sleep(2)
     
@@ -118,10 +144,19 @@ async def process_job(job_data: Dict) -> Dict:
     try:
         if job_type == "fx_var":
             result = compute_fx_var(params, contract_data)
+            # Store VaR value in gauge
+            risk_var_value.labels(contract_id=contract_id).set(result['var'])
         elif job_type == "ir_dv01":
             result = compute_ir_dv01(params, contract_data)
+            # Store DV01 value in gauge
+            risk_dv01_value.labels(contract_id=contract_id).set(result['dv01'])
         else:
             raise ValueError(f"Unknown job type: {job_type}")
+        
+        # Track successful calculation
+        duration = (datetime.utcnow() - start_time).total_seconds()
+        risk_calculation_duration.labels(job_type=job_type).observe(duration)
+        risk_calculations_total.labels(job_type=job_type, status='success').inc()
         
         return {
             "job_id": job_id,
@@ -130,6 +165,11 @@ async def process_job(job_data: Dict) -> Dict:
             "result": result,
         }
     except Exception as e:
+        # Track failed calculation
+        duration = (datetime.utcnow() - start_time).total_seconds()
+        risk_calculation_duration.labels(job_type=job_type).observe(duration)
+        risk_calculations_total.labels(job_type=job_type, status='failed').inc()
+        
         return {
             "job_id": job_id,
             "status": "failed",
@@ -186,5 +226,9 @@ async def consume_jobs():
 
 
 if __name__ == "__main__":
+    # Start Prometheus metrics server on port 9090
+    start_http_server(9090)
+    print("Prometheus metrics server started on port 9090")
+    
     loop = asyncio.get_event_loop()
     loop.run_until_complete(consume_jobs())

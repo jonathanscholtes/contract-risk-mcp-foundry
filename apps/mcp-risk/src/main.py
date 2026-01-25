@@ -14,12 +14,29 @@ from mcp.server.fastmcp import FastMCP
 import aio_pika
 import json
 import asyncio
+from prometheus_client import Counter, Gauge, start_http_server
 
 # Initialize FastMCP server
 mcp = FastMCP(
     name="risk",
     host="0.0.0.0",
     port=int(os.environ.get("PORT", 8000)),
+)
+
+# Prometheus metrics
+jobs_submitted_total = Counter(
+    'jobs_submitted_total',
+    'Total number of risk jobs submitted',
+    ['job_type']
+)
+jobs_completed_total = Counter(
+    'jobs_completed_total',
+    'Total number of risk jobs completed',
+    ['job_type', 'status']
+)
+pending_jobs = Gauge(
+    'pending_jobs',
+    'Number of pending risk jobs'
 )
 
 # RabbitMQ configuration
@@ -103,6 +120,10 @@ async def run_fx_var(
         "job_data": job_data,
     }
     
+    # Track metrics
+    jobs_submitted_total.labels(job_type='fx_var').inc()
+    pending_jobs.inc()
+    
     # Publish to RabbitMQ
     await publish_job(job_data)
     
@@ -147,6 +168,10 @@ async def run_ir_dv01(
         "submitted_at": datetime.utcnow().isoformat(),
         "job_data": job_data,
     }
+    
+    # Track metrics
+    jobs_submitted_total.labels(job_type='ir_dv01').inc()
+    pending_jobs.inc()
     
     # Publish to RabbitMQ
     await publish_job(job_data)
@@ -242,9 +267,18 @@ async def consume_results():
                         job_store[job_id]["result"] = result_data.get("result")
                         job_store[job_id]["error"] = result_data.get("error")
                         job_store[job_id]["completed_at"] = datetime.utcnow().isoformat()
+                        
+                        # Track completion metrics
+                        job_type = job_store[job_id]["job_data"]["job_type"]
+                        status = result_data["status"]
+                        jobs_completed_total.labels(job_type=job_type, status=status).inc()
+                        pending_jobs.dec()
 
 
 if __name__ == "__main__":
+    # Start Prometheus metrics server on port 9090
+    start_http_server(9090)
+    
     # Start background result consumer
     loop = asyncio.get_event_loop()
     loop.create_task(consume_results())

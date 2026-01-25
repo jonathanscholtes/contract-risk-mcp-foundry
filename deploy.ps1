@@ -314,6 +314,8 @@ helm upgrade --install mcp-tools .\k8s\helm\mcp-tools `
     --set mcpMarket.tag=latest `
     --set foundryAgent.endpoint=$aiProjectEndpoint `
     --set foundryAgent.apiKey="PLACEHOLDER-UPDATE-IN-K8S-SECRET" `
+    --set rabbitmq.user=$rabbitmqUsername `
+    --set rabbitmq.password=$rabbitmqPassword `
     --wait --timeout 10m
 
 Write-Host "`nWaiting for LoadBalancer public IPs to be assigned..." -ForegroundColor Yellow
@@ -453,12 +455,30 @@ Write-Host "[OK] RabbitMQ deployed" -ForegroundColor Green
 Write-Host "[OK] MCP tool servers deployed" -ForegroundColor Green
 Write-Host "[OK] Risk workers deployed with KEDA autoscaling" -ForegroundColor Green
 
+# Get Grafana external IP
+Write-Host "`nRetrieving service endpoints..." -ForegroundColor Yellow
+$grafanaIP = Get-ServiceExternalIP -ServiceName "grafana" -Namespace "platform" -MaxWaitSeconds 60
+
+Write-Host "`n=== Service Endpoints ===" -ForegroundColor Cyan
+if (![string]::IsNullOrWhiteSpace($grafanaIP)) {
+    Write-Host "Grafana Dashboard: " -NoNewline -ForegroundColor Yellow
+    Write-Host "http://$grafanaIP:3000" -ForegroundColor Green
+    Write-Host "  (Login: admin / admin)" -ForegroundColor Gray
+} else {
+    Write-Host "Grafana: External IP pending (use port-forward)" -ForegroundColor Yellow
+    Write-Host "  kubectl port-forward -n platform svc/grafana 3000:3000" -ForegroundColor Gray
+}
+
 Write-Host "`n=== Next Steps ===" -ForegroundColor Cyan
 Write-Host "1. Update Foundry agent API key:" -ForegroundColor Yellow
 Write-Host "   kubectl edit secret foundry-agent-secret -n tools" -ForegroundColor Gray
 Write-Host ""
 Write-Host "2. Access services:" -ForegroundColor Yellow
-Write-Host "   Grafana:  kubectl port-forward -n platform svc/grafana 3000:3000" -ForegroundColor Gray
+if (![string]::IsNullOrEmpty($grafanaIP)) {
+    Write-Host "   Grafana:  http://$grafanaIP:3000 (admin/admin)" -ForegroundColor Gray
+} else {
+    Write-Host "   Grafana:  kubectl port-forward -n platform svc/grafana 3000:3000" -ForegroundColor Gray
+}
 Write-Host "   RabbitMQ: kubectl port-forward -n rabbitmq svc/rabbitmq 15672:15672" -ForegroundColor Gray
 Write-Host ""
 Write-Host "3. Seed sample data:" -ForegroundColor Yellow

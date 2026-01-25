@@ -11,12 +11,29 @@ from typing import Dict, List, Optional
 import os
 from mcp.server.fastmcp import FastMCP
 from contracts import Contract, ContractType, CurrencyPair
+from prometheus_client import Counter, Gauge, start_http_server
 
 # Initialize FastMCP server
 mcp = FastMCP(
     name="contracts",
     host="0.0.0.0",
     port=int(os.environ.get("PORT", 8000)),
+)
+
+# Prometheus metrics
+contracts_queried_total = Counter(
+    'contracts_queried_total',
+    'Total number of contract queries',
+    ['query_type']
+)
+risk_memos_written_total = Counter(
+    'risk_memos_written_total',
+    'Total number of risk memos written',
+    ['contract_id', 'breach_alert']
+)
+contracts_in_registry = Gauge(
+    'contracts_in_registry',
+    'Current number of contracts in registry'
 )
 
 # In-memory contract store (in production, use a database)
@@ -64,6 +81,9 @@ def seed_contracts():
     
     for contract in sample_contracts:
         contract_store[contract.contract_id] = contract
+    
+    # Update registry size metric
+    contracts_in_registry.set(len(contract_store))
 
 
 # Seed on startup
@@ -100,6 +120,9 @@ def search_contracts(
         
         results.append(contract.model_dump(mode="json"))
     
+    # Track query
+    contracts_queried_total.labels(query_type='search').inc()
+    
     return {
         "contracts": results,
         "count": len(results),
@@ -122,6 +145,7 @@ def get_contract(contract_id: str) -> Dict:
             "error": f"Contract {contract_id} not found",
         }
     
+    contracts_queried_total.labels(query_type='get').inc()
     contract = contract_store[contract_id]
     return contract.model_dump(mode="json")
 
@@ -183,6 +207,7 @@ def create_contract(
         )
         
         contract_store[contract_id] = contract
+        contracts_in_registry.set(len(contract_store))
         
         return {
             "message": "Contract created successfully",
@@ -238,6 +263,12 @@ def write_risk_memo(
     # Update contract's last risk memo date
     contract_store[contract_id].last_risk_memo_date = date.today()
     
+    # Track memo written
+    risk_memos_written_total.labels(
+        contract_id=contract_id,
+        breach_alert=str(breach_alert).lower()
+    ).inc()
+    
     return {
         "message": "Risk memo written successfully",
         "memo": memo,
@@ -278,6 +309,7 @@ def list_all_contracts() -> Dict[str, List[Dict]]:
         Dictionary with list of all contracts
     """
     contracts = [contract.model_dump(mode="json") for contract in contract_store.values()]
+    contracts_queried_total.labels(query_type='list_all').inc()
     
     return {
         "contracts": contracts,
@@ -286,5 +318,8 @@ def list_all_contracts() -> Dict[str, List[Dict]]:
 
 
 if __name__ == "__main__":
+    # Start Prometheus metrics server on port 9090
+    start_http_server(9090)
+    
     # Run the MCP server
     mcp.run(transport="streamable-http")

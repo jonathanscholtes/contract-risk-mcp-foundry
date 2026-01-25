@@ -278,6 +278,8 @@ async def main():
     
     # Setup scheduler for cron-based tasks
     scheduler = setup_scheduler()
+    scheduler.start()
+    print("[Scheduler] Started - tasks scheduled")
     
     # Start background tasks
     tasks = [
