@@ -11,5 +11,5 @@ COPY apps/agent-orchestrator /app/agent-orchestrator
 # Install dependencies
 RUN pip install --no-cache-dir /app/agent-orchestrator
 
-# Run the orchestrator
-CMD ["python", "-m", "agent-orchestrator.src.orchestrator"]
+# Run the orchestrator with unbuffered output for proper logging
+CMD ["python", "-u", "-m", "agent-orchestrator.src.orchestrator"]

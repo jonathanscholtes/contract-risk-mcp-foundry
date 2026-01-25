@@ -332,9 +332,9 @@ function Get-ServiceExternalIP {
     
     $waited = 0
     while ($waited -lt $MaxWaitSeconds) {
-        $externalIP = kubectl get svc $ServiceName -n $Namespace -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>$null
-        if (![string]::IsNullOrEmpty($externalIP) -and $externalIP -ne "<pending>") {
-            return $externalIP
+        $externalIP = (kubectl get svc $ServiceName -n $Namespace -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>$null)
+        if (![string]::IsNullOrWhiteSpace($externalIP) -and $externalIP -ne "<pending>") {
+            return $externalIP.Trim()
         }
         Start-Sleep -Seconds 10
         $waited += 10
@@ -461,8 +461,7 @@ $grafanaIP = Get-ServiceExternalIP -ServiceName "grafana" -Namespace "platform" 
 
 Write-Host "`n=== Service Endpoints ===" -ForegroundColor Cyan
 if (![string]::IsNullOrWhiteSpace($grafanaIP)) {
-    Write-Host "Grafana Dashboard: " -NoNewline -ForegroundColor Yellow
-    Write-Host "http://$grafanaIP:3000" -ForegroundColor Green
+    Write-Host "Grafana Dashboard: http://${grafanaIP}:3000" -ForegroundColor Green
     Write-Host "  (Login: admin / admin)" -ForegroundColor Gray
 } else {
     Write-Host "Grafana: External IP pending (use port-forward)" -ForegroundColor Yellow

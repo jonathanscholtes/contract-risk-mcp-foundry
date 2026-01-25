@@ -255,7 +255,6 @@ def setup_scheduler():
         replace_existing=True,
     )
     
-    scheduler.start()
     print("[Scheduler] Cron jobs configured:")
     print("  - Daily scan: 8:00 AM UTC")
     print("  - Intraday scans: Every 4 hours")
@@ -280,6 +279,14 @@ async def main():
     scheduler = setup_scheduler()
     scheduler.start()
     print("[Scheduler] Started - tasks scheduled")
+    
+    # Run an immediate portfolio scan on startup for testing
+    print("[Startup] Running initial portfolio scan...")
+    try:
+        await run_portfolio_scan()
+        print("[Startup] Initial portfolio scan completed")
+    except Exception as e:
+        print(f"[Startup] Error during initial scan: {e}")
     
     # Start background tasks
     tasks = [

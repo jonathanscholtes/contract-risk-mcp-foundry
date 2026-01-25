@@ -18,13 +18,14 @@ Usage:
 import asyncio
 import httpx
 import json
+import os
 from datetime import datetime
 from typing import List, Dict
 
-# Configuration
-MCP_CONTRACTS_URL = "http://localhost:8001"
-MCP_RISK_URL = "http://localhost:8002"
-MCP_MARKET_URL = "http://localhost:8003"
+# Configuration - use environment variables or localhost
+MCP_CONTRACTS_URL = os.getenv("MCP_CONTRACTS_URL", "http://localhost:8001")
+MCP_RISK_URL = os.getenv("MCP_RISK_URL", "http://localhost:8002")
+MCP_MARKET_URL = os.getenv("MCP_MARKET_URL", "http://localhost:8003")
 
 # Color codes for terminal output
 GREEN = "\033[92m"

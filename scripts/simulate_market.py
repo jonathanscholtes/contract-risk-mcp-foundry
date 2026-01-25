@@ -3,9 +3,10 @@
 import requests
 import time
 import random
+import os
 
-# Market service URL
-MARKET_URL = "http://localhost:8003"
+# Market service URL - use environment variable or localhost
+MARKET_URL = os.getenv("MCP_MARKET_URL", "http://localhost:8003")
 
 
 def simulate_shock(currency_pair, shock_pct):
