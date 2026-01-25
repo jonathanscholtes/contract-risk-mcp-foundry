@@ -145,6 +145,7 @@ $deploymentOutput = az deployment sub create `
 # Parse deployment outputs
 $deploymentOutputJsonInfra = $deploymentOutput | ConvertFrom-Json
 $managedIdentityName = $deploymentOutputJsonInfra.managedIdentityName.value
+$managedIdentityClientId = $deploymentOutputJsonInfra.managedIdentityClientId.value
 #$appServicePlanName = $deploymentOutputJsonInfra.appServicePlanName.value
 $resourceGroupName = $deploymentOutputJsonInfra.resourceGroupName.value
 $storageAccountName = $deploymentOutputJsonInfra.storageAccountName.value
@@ -304,7 +305,33 @@ if (-not $success) {
     exit 1
 }
 
-Write-Host "`n3. Deploying MCP Tools..." -ForegroundColor Magenta
+Write-Host "`n3. Configuring Azure Workload Identity for agent-orchestrator..." -ForegroundColor Magenta
+# Get AKS OIDC issuer URL
+$oidcIssuer = az aks show --name $aksName --resource-group $resourceGroupName --query "oidcIssuerProfile.issuerUrl" -o tsv
+
+# Check if federated credential already exists
+$existingFedCred = az identity federated-credential show `
+    --name "agent-orchestrator-federated-id" `
+    --identity-name $managedIdentityName `
+    --resource-group $resourceGroupName `
+    2>$null
+
+if ($null -eq $existingFedCred) {
+    Write-Host "Creating federated identity credential for agent-orchestrator..." -ForegroundColor Yellow
+    az identity federated-credential create `
+        --name "agent-orchestrator-federated-id" `
+        --identity-name $managedIdentityName `
+        --resource-group $resourceGroupName `
+        --issuer $oidcIssuer `
+        --subject "system:serviceaccount:tools:agent-orchestrator-sa" `
+        --audience "api://AzureADTokenExchange" `
+        --output none
+    Write-Host "Federated identity credential created" -ForegroundColor Green
+} else {
+    Write-Host "Federated identity credential already exists" -ForegroundColor Green
+}
+
+Write-Host "`n4. Deploying MCP Tools..." -ForegroundColor Magenta
 helm upgrade --install mcp-tools .\k8s\helm\mcp-tools `
     --namespace tools --create-namespace `
     --set registry=$acrLoginServer `
@@ -312,8 +339,8 @@ helm upgrade --install mcp-tools .\k8s\helm\mcp-tools `
     --set mcpContracts.tag=latest `
     --set mcpRisk.tag=latest `
     --set mcpMarket.tag=latest `
-    --set foundryAgent.endpoint=$aiProjectEndpoint `
-    --set foundryAgent.apiKey="PLACEHOLDER-UPDATE-IN-K8S-SECRET" `
+    --set azureAiProject.endpoint=$aiProjectEndpoint `
+    --set azureAiProject.managedIdentityClientId=$managedIdentityClientId `
     --set rabbitmq.user=$rabbitmqUsername `
     --set rabbitmq.password=$rabbitmqPassword `
     --wait --timeout 10m
@@ -382,10 +409,11 @@ if ($pythonAvailable -and -not $skipAgentDeployment) {
     pip install -r scripts/requirements-agents.txt --quiet
 
     # MCP URLs using public IPs (now that services are deployed with LoadBalancer)
-    # URLs must end with /mcp for http-streamable protocol
-    $mcpContractsUrl = "http://${mcpContractsIP}:8000/mcp"
-    $mcpRiskUrl = "http://${mcpRiskIP}:8000/mcp"
-    $mcpMarketUrl = "http://${mcpMarketIP}:8000/mcp"
+    # URLs must end with /mcp for streamable-http protocol (Azure AI Foundry requirement)
+    # Port 80 is required for proper MCP session with Azure AI Foundry
+    $mcpContractsUrl = "http://${mcpContractsIP}/mcp"
+    $mcpRiskUrl = "http://${mcpRiskIP}/mcp"
+    $mcpMarketUrl = "http://${mcpMarketIP}/mcp"
     
     # Default model deployment name - update this based on your Foundry project
     $modelDeployment = "gpt-4o"
@@ -438,7 +466,7 @@ if ($pythonAvailable -and -not $skipAgentDeployment) {
     }
 }
 
-Write-Host "`n4. Deploying Risk Workers..." -ForegroundColor Magenta
+Write-Host "`n5. Deploying Risk Workers..." -ForegroundColor Magenta
 helm upgrade --install risk-workers .\k8s\helm\risk-workers `
     --namespace workers --create-namespace `
     --set registry=$acrLoginServer `

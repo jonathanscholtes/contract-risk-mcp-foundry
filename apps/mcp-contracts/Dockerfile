@@ -11,5 +11,8 @@ COPY apps/mcp-contracts /app/mcp-contracts
 # Install dependencies
 RUN pip install --no-cache-dir /app/mcp-contracts
 
+# Expose MCP server port
+EXPOSE 80
+
 # Run the server
 CMD ["python", "-m", "mcp-contracts.src.main"]

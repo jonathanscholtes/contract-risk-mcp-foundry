@@ -17,7 +17,8 @@ from prometheus_client import Counter, Gauge, start_http_server
 mcp = FastMCP(
     name="contracts",
     host="0.0.0.0",
-    port=int(os.environ.get("PORT", 8000)),
+    port=80,
+    stateless_http=True,
 )
 
 # Prometheus metrics
@@ -91,11 +92,11 @@ seed_contracts()
 
 
 @mcp.tool()
-def search_contracts(
+async def search_contracts(
     contract_type: Optional[str] = None,
     counterparty: Optional[str] = None,
     currency_pair: Optional[str] = None,
-) -> Dict[str, List[Dict]]:
+) -> Dict:
     """
     Search for contracts by various criteria.
     
@@ -130,7 +131,7 @@ def search_contracts(
 
 
 @mcp.tool()
-def get_contract(contract_id: str) -> Dict:
+async def get_contract(contract_id: str) -> Dict:
     """
     Get a specific contract by ID.
     
@@ -151,7 +152,7 @@ def get_contract(contract_id: str) -> Dict:
 
 
 @mcp.tool()
-def create_contract(
+async def create_contract(
     contract_id: str,
     contract_type: str,
     counterparty: str,
@@ -220,7 +221,7 @@ def create_contract(
 
 
 @mcp.tool()
-def write_risk_memo(
+async def write_risk_memo(
     contract_id: str,
     memo_title: str,
     memo_content: str,
@@ -276,7 +277,7 @@ def write_risk_memo(
 
 
 @mcp.tool()
-def get_risk_memos(contract_id: str) -> Dict[str, List[Dict]]:
+async def get_risk_memos(contract_id: str) -> Dict:
     """
     Get all risk memos for a contract.
     
@@ -301,7 +302,7 @@ def get_risk_memos(contract_id: str) -> Dict[str, List[Dict]]:
 
 
 @mcp.tool()
-def list_all_contracts() -> Dict[str, List[Dict]]:
+async def list_all_contracts() -> Dict:
     """
     List all contracts in the system.
     

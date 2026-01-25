@@ -1,0 +1,14 @@
+azure-ai-projects==2.0.0b2
+azure-ai-agents
+azure-ai-evaluation
+azure-identity
+python-dotenv==1.0.0
+azure-search-documents
+azure-core
+agent-framework-core==1.0.0b260107
+agent-framework-azure-ai==1.0.0b260107
+langchain-openai==1.1.7
+langchain==1.2.6
+langgraph==1.0.6
+langchain-community==0.4.1
+langchain-mcp-adapters==0.2.1

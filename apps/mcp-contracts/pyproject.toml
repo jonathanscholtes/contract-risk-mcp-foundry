@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "MCP server for contract registry"
 requires-python = ">=3.10"
 dependencies = [
-    "mcp",
+    "mcp==1.13.0",
     "pydantic>=2.0",
     "prometheus-client>=0.19.0",
 ]

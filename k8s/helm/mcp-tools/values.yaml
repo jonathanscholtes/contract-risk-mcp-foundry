@@ -7,22 +7,22 @@ agentOrchestrator:
   tag: 0.1.0
   replicas: 1
 
-# Foundry agent configuration
-foundryAgent:
-  endpoint: https://your-foundry-endpoint.ai.azure.com/invoke
-  apiKey: "your-api-key"
+# Azure AI Project configuration
+azureAiProject:
+  endpoint: ""  # Set via --set azureAiProject.endpoint=<your-endpoint>
+  managedIdentityClientId: ""  # Set via --set azureAiProject.managedIdentityClientId=<client-id>
+
+# Agent names
+agents:
+  portfolioScan: "PortfolioScanAnalyst"
+  marketShock: "MarketShockAnalyst"
+  thresholdBreach: "ThresholdBreachAnalyst"
 
 # Thresholds
 thresholds:
   fxVarThreshold: "100000"  # $100k
   irDv01Threshold: "50000"   # $50k
   marketShockThreshold: "2.0"  # 2%
-
-# MCP service URLs
-mcpServices:
-  contractsUrl: http://mcp-contracts.tools.svc.cluster.local:8000
-  riskUrl: http://mcp-risk.tools.svc.cluster.local:8000
-  marketUrl: http://mcp-market.tools.svc.cluster.local:8000
 
 # MCP Contracts
 mcpContracts:

@@ -3,6 +3,14 @@ kind: Namespace
 metadata:
   name: tools
 ---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agent-orchestrator-sa
+  namespace: tools
+  annotations:
+    azure.workload.identity/client-id: {{ .Values.azureAiProject.managedIdentityClientId | quote }}
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -17,10 +25,12 @@ spec:
     metadata:
       labels:
         app: agent-orchestrator
+        azure.workload.identity/use: "true"
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/port: "8000"
     spec:
+      serviceAccountName: agent-orchestrator-sa
       containers:
       - name: agent-orchestrator
         image: {{ .Values.registry }}/{{ .Values.agentOrchestrator.image }}:{{ .Values.agentOrchestrator.tag }}
@@ -33,34 +43,22 @@ spec:
           value: {{ .Values.rabbitmq.user }}
         - name: RABBITMQ_PASS
           value: {{ .Values.rabbitmq.password }}
-        - name: FOUNDRY_AGENT_ENDPOINT
-          value: {{ .Values.foundryAgent.endpoint }}
-        - name: FOUNDRY_API_KEY
-          valueFrom:
-            secretKeyRef:
-              name: foundry-agent-secret
-              key: api-key
-        - name: MCP_CONTRACTS_URL
-          value: {{ .Values.mcpServices.contractsUrl }}
-        - name: MCP_RISK_URL
-          value: {{ .Values.mcpServices.riskUrl }}
-        - name: MCP_MARKET_URL
-          value: {{ .Values.mcpServices.marketUrl }}
+        - name: AZURE_AI_PROJECT_ENDPOINT
+          value: {{ .Values.azureAiProject.endpoint | quote }}
+        - name: AZURE_CLIENT_ID
+          value: {{ .Values.azureAiProject.managedIdentityClientId | quote }}
+        - name: PORTFOLIO_SCAN_AGENT
+          value: {{ .Values.agents.portfolioScan | quote }}
+        - name: MARKET_SHOCK_AGENT
+          value: {{ .Values.agents.marketShock | quote }}
+        - name: THRESHOLD_BREACH_AGENT
+          value: {{ .Values.agents.thresholdBreach | quote }}
         - name: FX_VAR_THRESHOLD
           value: "{{ .Values.thresholds.fxVarThreshold }}"
         - name: IR_DV01_THRESHOLD
           value: "{{ .Values.thresholds.irDv01Threshold }}"
         - name: MARKET_SHOCK_THRESHOLD
           value: "{{ .Values.thresholds.marketShockThreshold }}"
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: foundry-agent-secret
-  namespace: tools
-type: Opaque
-stringData:
-  api-key: {{ .Values.foundryAgent.apiKey }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -84,11 +82,8 @@ spec:
       - name: mcp-contracts
         image: {{ .Values.registry }}/{{ .Values.mcpContracts.image }}:{{ .Values.mcpContracts.tag }}
         ports:
-        - containerPort: 8000
+        - containerPort: 80
           name: http
-        env:
-        - name: PORT
-          value: "8000"
 ---
 apiVersion: v1
 kind: Service
@@ -103,8 +98,8 @@ spec:
     app: mcp-contracts
   ports:
   - name: http
-    port: 8000
-    targetPort: 8000
+    port: 80
+    targetPort: 80
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -155,7 +150,7 @@ spec:
     app: mcp-risk
   ports:
   - name: http
-    port: 8000
+    port: 80
     targetPort: 8000
 ---
 apiVersion: apps/v1
@@ -199,5 +194,5 @@ spec:
     app: mcp-market
   ports:
   - name: http
-    port: 8000
+    port: 80
     targetPort: 8000

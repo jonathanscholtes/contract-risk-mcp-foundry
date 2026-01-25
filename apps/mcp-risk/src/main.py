@@ -21,6 +21,7 @@ mcp = FastMCP(
     name="risk",
     host="0.0.0.0",
     port=int(os.environ.get("PORT", 8000)),
+    stateless_http=True,
 )
 
 # Prometheus metrics
@@ -184,7 +185,7 @@ async def run_ir_dv01(
 
 
 @mcp.tool()
-def get_risk_result(job_id: str) -> Dict:
+async def get_risk_result(job_id: str) -> Dict:
     """
     Get the result of a risk calculation job.
     
@@ -213,7 +214,7 @@ def get_risk_result(job_id: str) -> Dict:
 
 
 @mcp.tool()
-def list_jobs(status: Optional[str] = None) -> Dict[str, list]:
+async def list_jobs(status: Optional[str] = None) -> Dict:
     """
     List all jobs, optionally filtered by status.
     

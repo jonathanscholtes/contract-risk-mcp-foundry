@@ -7,7 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "shared"))
 
 from datetime import datetime
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
 
 import os
 from mcp.server.fastmcp import FastMCP
@@ -18,6 +18,7 @@ mcp = FastMCP(
     name="market",
     host="0.0.0.0",
     port=int(os.environ.get("PORT", 8000)),
+    stateless_http=True,
 )
 
 
@@ -33,7 +34,7 @@ MARKET_DATA = {
 
 
 @mcp.tool()
-def get_fx_spot(currency_pair: str) -> Dict[str, float]:
+async def get_fx_spot(currency_pair: str) -> Dict[str, Any]:
     """
     Get the current FX spot rate for a currency pair.
     
@@ -61,7 +62,7 @@ def get_fx_spot(currency_pair: str) -> Dict[str, float]:
 
 
 @mcp.tool()
-def get_fx_volatility(currency_pair: str) -> Dict[str, float]:
+async def get_fx_volatility(currency_pair: str) -> Dict[str, Any]:
     """
     Get the annualized volatility for a currency pair.
     
@@ -87,7 +88,7 @@ def get_fx_volatility(currency_pair: str) -> Dict[str, float]:
 
 
 @mcp.tool()
-def get_market_snapshot() -> Dict[str, Dict[str, float]]:
+async def get_market_snapshot() -> Dict[str, Any]:
     """
     Get a snapshot of all available market data.
     
@@ -107,7 +108,7 @@ def get_market_snapshot() -> Dict[str, Dict[str, float]]:
 
 
 @mcp.tool()
-def simulate_shock(currency_pair: str, shock_pct: float) -> Dict[str, float]:
+async def simulate_shock(currency_pair: str, shock_pct: float) -> Dict[str, Any]:
     """
     Simulate a shock scenario for a currency pair.
     
@@ -140,7 +141,7 @@ def simulate_shock(currency_pair: str, shock_pct: float) -> Dict[str, float]:
 
 
 @mcp.tool()
-def reset_market_data() -> Dict[str, str]:
+async def reset_market_data() -> Dict[str, Any]:
     """
     Reset market data to original values.
     

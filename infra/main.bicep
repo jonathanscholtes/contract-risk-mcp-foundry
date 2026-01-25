@@ -123,6 +123,7 @@ module ai 'core/ai/main.bicep' = {
 
 
 output managedIdentityName string = managedIdentityModule.outputs.managedIdentityName
+output managedIdentityClientId string = managedIdentityModule.outputs.managedIdentityClientId
 output resourceGroupName string = resourceGroup.name
 output storageAccountName string = data.outputs.storageAccountName 
 output logAnalyticsWorkspaceName string = monitor.outputs.logAnalyticsWorkspaceName

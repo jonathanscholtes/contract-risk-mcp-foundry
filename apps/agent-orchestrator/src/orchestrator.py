@@ -20,6 +20,8 @@ from datetime import datetime, time
 from typing import Dict, List, Optional
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from azure.identity.aio import DefaultAzureCredential
+from azure.ai.projects.aio import AIProjectClient
 
 # Configuration
 RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "rabbitmq")
@@ -27,12 +29,13 @@ RABBITMQ_PORT = int(os.getenv("RABBITMQ_PORT", "5672"))
 RABBITMQ_USER = os.getenv("RABBITMQ_USER", "guest")
 RABBITMQ_PASS = os.getenv("RABBITMQ_PASS", "guest")
 
-FOUNDRY_AGENT_ENDPOINT = os.getenv("FOUNDRY_AGENT_ENDPOINT", "https://foundry-agent-url.com/invoke")
-FOUNDRY_API_KEY = os.getenv("FOUNDRY_API_KEY", "")
+# Azure AI Project configuration
+AZURE_AI_PROJECT_ENDPOINT = os.environ["AZURE_AI_PROJECT_ENDPOINT"]  # Required environment variable
 
-MCP_CONTRACTS_URL = os.getenv("MCP_CONTRACTS_URL", "http://mcp-contracts.tools.svc.cluster.local:8000")
-MCP_RISK_URL = os.getenv("MCP_RISK_URL", "http://mcp-risk.tools.svc.cluster.local:8000")
-MCP_MARKET_URL = os.getenv("MCP_MARKET_URL", "http://mcp-market.tools.svc.cluster.local:8000")
+# Agent names for different tasks
+PORTFOLIO_SCAN_AGENT = os.getenv("PORTFOLIO_SCAN_AGENT", "PortfolioScanAnalyst")
+MARKET_SHOCK_AGENT = os.getenv("MARKET_SHOCK_AGENT", "MarketShockAnalyst")
+THRESHOLD_BREACH_AGENT = os.getenv("THRESHOLD_BREACH_AGENT", "ThresholdBreachAnalyst")
 
 # Thresholds
 FX_VAR_THRESHOLD = float(os.getenv("FX_VAR_THRESHOLD", "100000"))  # $100k
@@ -47,47 +50,79 @@ async def get_rabbitmq_connection():
     )
 
 
-async def invoke_foundry_agent(agent_task: str, context: Dict) -> Dict:
+async def invoke_foundry_agent(agent_name: str, agent_task: str, context: Dict) -> Dict:
     """
-    Invoke a Foundry agent via API.
+    Invoke a Foundry agent using Azure AI Projects SDK.
+    Agent is pre-configured with MCP tools at deployment time.
     
     Args:
+        agent_name: Name of the agent to invoke
         agent_task: Description of the task for the agent
         context: Context data (contracts, market data, risk results, etc.)
     
     Returns:
         Agent response
     """
-    print(f"[Agent Invocation] Task: {agent_task}")
+    print(f"[Agent Invocation] Agent: {agent_name}, Task: {agent_task}")
     
-    payload = {
-        "task": agent_task,
-        "context": context,
-        "timestamp": datetime.utcnow().isoformat(),
-        "mcp_endpoints": {
-            "contracts": MCP_CONTRACTS_URL,
-            "risk": MCP_RISK_URL,
-            "market": MCP_MARKET_URL,
-        }
-    }
+    # Format context as user message
+    # Note: Agent already has MCP tools configured, no need to pass URLs
+    user_message = f"""{agent_task}
+
+Context:
+{json.dumps(context, indent=2)}
+"""
     
-    async with httpx.AsyncClient(timeout=300.0) as client:
-        try:
-            response = await client.post(
-                FOUNDRY_AGENT_ENDPOINT,
-                json=payload,
-                headers={
-                    "Authorization": f"Bearer {FOUNDRY_API_KEY}",
-                    "Content-Type": "application/json",
-                }
-            )
-            response.raise_for_status()
-            result = response.json()
-            print(f"[Agent Response] Status: {result.get('status', 'unknown')}")
-            return result
-        except Exception as e:
-            print(f"[Agent Error] Failed to invoke agent: {e}")
-            return {"status": "error", "error": str(e)}
+    try:
+        async with DefaultAzureCredential() as credential:
+            async with AIProjectClient(
+                endpoint=AZURE_AI_PROJECT_ENDPOINT,
+                credential=credential
+            ) as project_client:
+                
+                # Get the agent by name
+                agent = await project_client.agents.get(agent_name=agent_name)
+                print(f"[Agent] Retrieved {agent.name} (id: {agent.id})")
+                
+                async with project_client.get_openai_client() as openai_client:
+                    # Create a new conversation for this task
+                    conversation = await openai_client.conversations.create()
+                    print(f"[Conversation] Created conversation (id: {conversation.id})")
+                    
+                    # Add user message to conversation
+                    await openai_client.conversations.items.create(
+                        conversation_id=conversation.id,
+                        items=[{
+                            "type": "message",
+                            "role": "user",
+                            "content": user_message
+                        }]
+                    )
+                    
+                    # Get response from agent
+                    response = await openai_client.responses.create(
+                        conversation=conversation.id,
+                        extra_body={
+                            "agent": {
+                                "name": agent.name,
+                                "type": "agent_reference"
+                            }
+                        },
+                        input=""
+                    )
+                    
+                    print(f"[Agent Response] Received response from agent")
+                    return {
+                        "status": "success",
+                        "output": response.output_text,
+                        "conversation_id": conversation.id,
+                        "agent_id": agent.id
+                    }
+    
+    except Exception as e:
+        print(f"[Agent Error] Failed to invoke agent: {e}")
+        return {"status": "error", "error": str(e)}
+
 
 
 async def handle_risk_result(result_data: Dict):
@@ -126,7 +161,8 @@ async def handle_risk_result(result_data: Dict):
         print(f"[Threshold Breach] Invoking agent for contract {contract_id}")
         
         await invoke_foundry_agent(
-            agent_task="threshold_breach_analysis",
+            agent_name=THRESHOLD_BREACH_AGENT,
+            agent_task="Analyze this threshold breach and provide recommendations",
             context={
                 "contract_id": contract_id,
                 "risk_result": result,
@@ -162,7 +198,8 @@ async def detect_market_shock(market_data: Dict):
         print(f"[Market Shock] Detected {len(shocks)} market anomalies")
         
         await invoke_foundry_agent(
-            agent_task="market_shock_assessment",
+            agent_name=MARKET_SHOCK_AGENT,
+            agent_task="Assess the impact of these market shocks on the portfolio",
             context={
                 "shocks": shocks,
                 "market_snapshot": market_data,
@@ -179,7 +216,8 @@ async def run_portfolio_scan():
     print(f"[Portfolio Scan] Starting scheduled scan at {datetime.utcnow().isoformat()}")
     
     await invoke_foundry_agent(
-        agent_task="daily_portfolio_risk_scan",
+        agent_name=PORTFOLIO_SCAN_AGENT,
+        agent_task="Run a comprehensive portfolio risk scan",
         context={
             "scan_type": "comprehensive",
             "timestamp": datetime.utcnow().isoformat(),
@@ -211,24 +249,6 @@ async def consume_risk_results():
                 async with message.process():
                     result_data = json.loads(message.body.decode())
                     await handle_risk_result(result_data)
-
-
-async def monitor_market_events():
-    """
-    Periodic task: Monitor market for significant events.
-    """
-    while True:
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(f"{MCP_MARKET_URL}/market_snapshot")
-                if response.status_code == 200:
-                    market_data = response.json()
-                    await detect_market_shock(market_data)
-        except Exception as e:
-            print(f"[Market Monitor] Error: {e}")
-        
-        # Check every 5 minutes
-        await asyncio.sleep(300)
 
 
 def setup_scheduler():
@@ -269,10 +289,11 @@ async def main():
     print("=" * 60)
     print("Agent Orchestrator Starting")
     print("=" * 60)
-    print(f"Foundry Agent Endpoint: {FOUNDRY_AGENT_ENDPOINT}")
-    print(f"MCP Contracts: {MCP_CONTRACTS_URL}")
-    print(f"MCP Risk: {MCP_RISK_URL}")
-    print(f"MCP Market: {MCP_MARKET_URL}")
+    print(f"Azure AI Project: {AZURE_AI_PROJECT_ENDPOINT}")
+    print(f"Portfolio Scan Agent: {PORTFOLIO_SCAN_AGENT}")
+    print(f"Market Shock Agent: {MARKET_SHOCK_AGENT}")
+    print(f"Threshold Breach Agent: {THRESHOLD_BREACH_AGENT}")
+    print("Note: Agents are pre-configured with MCP tools")
     print("=" * 60)
     
     # Setup scheduler for cron-based tasks
@@ -291,7 +312,6 @@ async def main():
     # Start background tasks
     tasks = [
         asyncio.create_task(consume_risk_results()),
-        asyncio.create_task(monitor_market_events()),
     ]
     
     try:

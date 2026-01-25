@@ -211,6 +211,17 @@ data:
       options:
         path: /var/lib/grafana/dashboards
 ---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards
+  namespace: platform
+data:
+  risk-operations.json: |
+{{ .Files.Get "../../observability/grafana/dashboards/risk-operations.json" | indent 4 }}
+  risk-operations-enhanced.json: |
+{{ .Files.Get "../../observability/grafana/dashboards/risk-operations-enhanced.json" | indent 4 }}
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
