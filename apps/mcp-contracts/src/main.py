@@ -93,17 +93,17 @@ seed_contracts()
 
 @mcp.tool()
 async def search_contracts(
-    contract_type: Optional[str] = None,
-    counterparty: Optional[str] = None,
-    currency_pair: Optional[str] = None,
+    contract_type: str = "",
+    counterparty: str = "",
+    currency_pair: str = "",
 ) -> Dict:
     """
-    Search for contracts by various criteria.
+    Search for contracts by various criteria. Use empty string to skip a filter.
     
     Args:
-        contract_type: Filter by contract type (fx_forward, irs, etc.)
-        counterparty: Filter by counterparty name (case-insensitive partial match)
-        currency_pair: Filter by currency pair
+        contract_type: Filter by contract type (fx_forward, irs, etc.). Empty string for no filter.
+        counterparty: Filter by counterparty name (case-insensitive partial match). Empty string for no filter.
+        currency_pair: Filter by currency pair. Empty string for no filter.
     
     Returns:
         Dictionary with list of matching contracts
@@ -111,7 +111,7 @@ async def search_contracts(
     results = []
     
     for contract in contract_store.values():
-        # Apply filters
+        # Apply filters (empty string means no filter)
         if contract_type and contract.contract_type != contract_type:
             continue
         if counterparty and counterparty.lower() not in contract.counterparty.lower():
@@ -158,16 +158,16 @@ async def create_contract(
     counterparty: str,
     trade_date: str,
     maturity_date: str,
-    currency_pair: Optional[str] = None,
-    notional_base: Optional[float] = None,
-    notional_quote: Optional[float] = None,
-    strike_rate: Optional[float] = None,
-    fixed_rate: Optional[float] = None,
-    notional: Optional[float] = None,
-    currency: Optional[str] = None,
+    currency_pair: str = "",
+    notional_base: float = 0.0,
+    notional_quote: float = 0.0,
+    strike_rate: float = 0.0,
+    fixed_rate: float = 0.0,
+    notional: float = 0.0,
+    currency: str = "",
 ) -> Dict:
     """
-    Create a new contract.
+    Create a new contract. Use empty strings or 0.0 for unused fields.
     
     Args:
         contract_id: Unique contract identifier
@@ -175,13 +175,13 @@ async def create_contract(
         counterparty: Counterparty name
         trade_date: Trade date (YYYY-MM-DD)
         maturity_date: Maturity date (YYYY-MM-DD)
-        currency_pair: Currency pair (for FX contracts)
-        notional_base: Notional in base currency (for FX)
-        notional_quote: Notional in quote currency (for FX)
-        strike_rate: Strike rate (for FX)
-        fixed_rate: Fixed rate (for IRS)
-        notional: Notional (for IRS)
-        currency: Currency (for IRS)
+        currency_pair: Currency pair (for FX contracts). Empty string if not applicable.
+        notional_base: Notional in base currency (for FX). 0.0 if not applicable.
+        notional_quote: Notional in quote currency (for FX). 0.0 if not applicable.
+        strike_rate: Strike rate (for FX). 0.0 if not applicable.
+        fixed_rate: Fixed rate (for IRS). 0.0 if not applicable.
+        notional: Notional (for IRS). 0.0 if not applicable.
+        currency: Currency (for IRS). Empty string if not applicable.
     
     Returns:
         Created contract details or error
@@ -225,7 +225,6 @@ async def write_risk_memo(
     contract_id: str,
     memo_title: str,
     memo_content: str,
-    risk_metrics: Optional[Dict] = None,
     breach_alert: bool = False,
 ) -> Dict:
     """
@@ -235,7 +234,6 @@ async def write_risk_memo(
         contract_id: Contract identifier
         memo_title: Title of the memo
         memo_content: Full memo content
-        risk_metrics: Optional dict of risk metrics (VaR, DV01, etc.)
         breach_alert: Whether this memo contains a breach alert
     
     Returns:

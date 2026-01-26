@@ -214,19 +214,19 @@ async def get_risk_result(job_id: str) -> Dict:
 
 
 @mcp.tool()
-async def list_jobs(status: Optional[str] = None) -> Dict:
+async def list_jobs(status: str = "") -> Dict:
     """
-    List all jobs, optionally filtered by status.
+    List all jobs, optionally filtered by status. Use empty string for no filter.
     
     Args:
-        status: Optional status filter (pending, processing, succeeded, failed)
+        status: Optional status filter (pending, processing, succeeded, failed). Empty string for all jobs.
     
     Returns:
         Dictionary with list of jobs
     """
     jobs = []
     for job_id, job_info in job_store.items():
-        if status is None or job_info["status"] == status:
+        if not status or job_info["status"] == status:
             jobs.append({
                 "job_id": job_id,
                 "status": job_info["status"],

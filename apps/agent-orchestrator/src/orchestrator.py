@@ -80,9 +80,9 @@ Context:
                 credential=credential
             ) as project_client:
                 
-                # Get the agent by name
+                # Retrieve the agent by name
                 agent = await project_client.agents.get(agent_name=agent_name)
-                print(f"[Agent] Retrieved {agent.name} (id: {agent.id})")
+                print(f"[Agent] Retrieved {agent.name} (id: {agent.id}, version: {agent.versions.latest.version})")
                 
                 async with project_client.get_openai_client() as openai_client:
                     # Create a new conversation for this task

@@ -76,7 +76,7 @@ spec:
         app: mcp-contracts
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "8000"
+        prometheus.io/port: "9090"
     spec:
       containers:
       - name: mcp-contracts
@@ -117,7 +117,7 @@ spec:
         app: mcp-risk
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "8000"
+        prometheus.io/port: "9090"
     spec:
       containers:
       - name: mcp-risk
@@ -169,7 +169,7 @@ spec:
         app: mcp-market
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "8000"
+        prometheus.io/port: "9090"
     spec:
       containers:
       - name: mcp-market
