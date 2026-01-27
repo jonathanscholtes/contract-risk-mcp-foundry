@@ -288,6 +288,42 @@ function Invoke-HelmWithRetry {
     return $false
 }
 
+# Function to create federated identity credential for workload identity
+function New-FederatedIdentityCredential {
+    param (
+        [string]$ServiceAccountName,
+        [string]$Namespace = "tools",
+        [string]$ManagedIdentityName,
+        [string]$ResourceGroupName,
+        [string]$OidcIssuer
+    )
+    
+    $credentialName = "$ServiceAccountName-federated-id"
+    $subject = "system:serviceaccount:${Namespace}:${ServiceAccountName}"
+    
+    # Check if federated credential already exists
+    $existingCred = az identity federated-credential show `
+        --name $credentialName `
+        --identity-name $ManagedIdentityName `
+        --resource-group $ResourceGroupName `
+        2>$null
+
+    if ($null -eq $existingCred) {
+        Write-Host "Creating federated identity credential for $ServiceAccountName..." -ForegroundColor Yellow
+        az identity federated-credential create `
+            --name $credentialName `
+            --identity-name $ManagedIdentityName `
+            --resource-group $ResourceGroupName `
+            --issuer $OidcIssuer `
+            --subject $subject `
+            --audience "api://AzureADTokenExchange" `
+            --output none
+        Write-Host "Federated identity credential created for $ServiceAccountName" -ForegroundColor Green
+    } else {
+        Write-Host "Federated identity credential already exists for $ServiceAccountName" -ForegroundColor Green
+    }
+}
+
 # Deploy Helm charts
 Write-Host "`n1. Deploying Platform (Monitoring)..." -ForegroundColor Magenta
 helm upgrade --install platform .\k8s\helm\platform `
@@ -312,31 +348,25 @@ if (-not $success) {
     exit 1
 }
 
-Write-Host "`n3. Configuring Azure Workload Identity for agent-orchestrator..." -ForegroundColor Magenta
+Write-Host "`n3. Configuring Azure Workload Identity..." -ForegroundColor Magenta
 # Get AKS OIDC issuer URL
 $oidcIssuer = az aks show --name $aksName --resource-group $resourceGroupName --query "oidcIssuerProfile.issuerUrl" -o tsv
 
-# Check if federated credential already exists
-$existingFedCred = az identity federated-credential show `
-    --name "agent-orchestrator-federated-id" `
-    --identity-name $managedIdentityName `
-    --resource-group $resourceGroupName `
-    2>$null
+# Get tenant ID for Key Vault
+$tenantId = az account show --query tenantId -o tsv
 
-if ($null -eq $existingFedCred) {
-    Write-Host "Creating federated identity credential for agent-orchestrator..." -ForegroundColor Yellow
-    az identity federated-credential create `
-        --name "agent-orchestrator-federated-id" `
-        --identity-name $managedIdentityName `
-        --resource-group $resourceGroupName `
-        --issuer $oidcIssuer `
-        --subject "system:serviceaccount:tools:agent-orchestrator-sa" `
-        --audience "api://AzureADTokenExchange" `
-        --output none
-    Write-Host "Federated identity credential created" -ForegroundColor Green
-} else {
-    Write-Host "Federated identity credential already exists" -ForegroundColor Green
-}
+# Create federated identity credentials for service accounts
+New-FederatedIdentityCredential `
+    -ServiceAccountName "agent-orchestrator-sa" `
+    -ManagedIdentityName $managedIdentityName `
+    -ResourceGroupName $resourceGroupName `
+    -OidcIssuer $oidcIssuer
+
+New-FederatedIdentityCredential `
+    -ServiceAccountName "mcp-contracts-sa" `
+    -ManagedIdentityName $managedIdentityName `
+    -ResourceGroupName $resourceGroupName `
+    -OidcIssuer $oidcIssuer
 
 Write-Host "`n4. Deploying MCP Tools..." -ForegroundColor Magenta
 helm upgrade --install mcp-tools .\k8s\helm\mcp-tools `
@@ -348,6 +378,8 @@ helm upgrade --install mcp-tools .\k8s\helm\mcp-tools `
     --set mcpMarket.tag=latest `
     --set azureAiProject.endpoint=$aiProjectEndpoint `
     --set azureAiProject.managedIdentityClientId=$managedIdentityClientId `
+    --set keyVault.name=$keyVaultName `
+    --set keyVault.tenantId=$tenantId `
     --set rabbitmq.user=$rabbitmqUsername `
     --set rabbitmq.password=$rabbitmqPassword `
     --wait --timeout 10m

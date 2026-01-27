@@ -12,6 +12,8 @@ import os
 from mcp.server.fastmcp import FastMCP
 from contracts import Contract, ContractType, CurrencyPair
 from prometheus_client import Counter, Gauge, start_http_server
+from pymongo import MongoClient
+from pymongo.errors import DuplicateKeyError, PyMongoError
 
 # Initialize FastMCP server
 mcp = FastMCP(
@@ -37,7 +39,46 @@ contracts_in_registry = Gauge(
     'Current number of contracts in registry'
 )
 
-# In-memory contract store (in production, use a database)
+# MongoDB configuration
+MONGODB_CONNECTION_STRING = os.getenv("MONGODB_CONNECTION_STRING", "")
+MONGODB_DATABASE = os.getenv("MONGODB_DATABASE", "contracts_db")
+MONGODB_CONTRACTS_COLLECTION = os.getenv("MONGODB_CONTRACTS_COLLECTION", "contracts")
+MONGODB_MEMOS_COLLECTION = os.getenv("MONGODB_MEMOS_COLLECTION", "risk_memos")
+
+# Initialize MongoDB client
+mongo_client = None
+contracts_collection = None
+memos_collection = None
+
+def init_mongodb():
+    """Initialize MongoDB connection and collections."""
+    global mongo_client, contracts_collection, memos_collection
+    
+    if not MONGODB_CONNECTION_STRING:
+        print("WARNING: MONGODB_CONNECTION_STRING not set. Using in-memory storage.")
+        return False
+    
+    try:
+        mongo_client = MongoClient(MONGODB_CONNECTION_STRING)
+        db = mongo_client[MONGODB_DATABASE]
+        contracts_collection = db[MONGODB_CONTRACTS_COLLECTION]
+        memos_collection = db[MONGODB_MEMOS_COLLECTION]
+        
+        # Create indexes
+        contracts_collection.create_index("contract_id", unique=True)
+        memos_collection.create_index("contract_id")
+        memos_collection.create_index("created_at")
+        
+        # Test connection
+        mongo_client.admin.command('ping')
+        print(f"Successfully connected to MongoDB: {MONGODB_DATABASE}")
+        return True
+    except PyMongoError as e:
+        print(f"Failed to connect to MongoDB: {e}")
+        print("Falling back to in-memory storage.")
+        return False
+
+# In-memory fallback storage
 contract_store: Dict[str, Contract] = {}
 memo_store: Dict[str, List[Dict]] = {}  # contract_id -> list of memos
 
@@ -80,14 +121,39 @@ def seed_contracts():
         ),
     ]
     
-    for contract in sample_contracts:
-        contract_store[contract.contract_id] = contract
-    
-    # Update registry size metric
-    contracts_in_registry.set(len(contract_store))
+    if contracts_collection is not None:
+        # Using MongoDB - check if already seeded
+        existing_count = contracts_collection.count_documents({})
+        if existing_count > 0:
+            print(f"Database already contains {existing_count} contracts. Skipping seed.")
+            contracts_in_registry.set(existing_count)
+            return
+        
+        # Insert sample contracts into MongoDB
+        for contract in sample_contracts:
+            try:
+                contract_dict = contract.model_dump(mode="json")
+                contracts_collection.insert_one(contract_dict)
+                print(f"Seeded contract: {contract.contract_id}")
+            except DuplicateKeyError:
+                print(f"Contract {contract.contract_id} already exists, skipping.")
+        
+        # Update registry size metric
+        count = contracts_collection.count_documents({})
+        contracts_in_registry.set(count)
+        print(f"Successfully seeded {len(sample_contracts)} contracts to MongoDB")
+    else:
+        # Using in-memory storage
+        for contract in sample_contracts:
+            contract_store[contract.contract_id] = contract
+        
+        # Update registry size metric
+        contracts_in_registry.set(len(contract_store))
+        print(f"Seeded {len(sample_contracts)} contracts to in-memory storage")
 
 
-# Seed on startup
+# Initialize MongoDB and seed on startup
+mongodb_enabled = init_mongodb()
 seed_contracts()
 
 
@@ -110,16 +176,33 @@ async def search_contracts(
     """
     results = []
     
-    for contract in contract_store.values():
-        # Apply filters (empty string means no filter)
-        if contract_type and contract.contract_type != contract_type:
-            continue
-        if counterparty and counterparty.lower() not in contract.counterparty.lower():
-            continue
-        if currency_pair and contract.currency_pair != currency_pair:
-            continue
+    if contracts_collection is not None:
+        # Using MongoDB
+        query = {}
+        if contract_type:
+            query["contract_type"] = contract_type
+        if counterparty:
+            query["counterparty"] = {"$regex": counterparty, "$options": "i"}
+        if currency_pair:
+            query["currency_pair"] = currency_pair
         
-        results.append(contract.model_dump(mode="json"))
+        cursor = contracts_collection.find(query)
+        for doc in cursor:
+            # Remove MongoDB's _id field
+            doc.pop("_id", None)
+            results.append(doc)
+    else:
+        # Using in-memory storage
+        for contract in contract_store.values():
+            # Apply filters (empty string means no filter)
+            if contract_type and contract.contract_type != contract_type:
+                continue
+            if counterparty and counterparty.lower() not in contract.counterparty.lower():
+                continue
+            if currency_pair and contract.currency_pair != currency_pair:
+                continue
+            
+            results.append(contract.model_dump(mode="json"))
     
     # Track query
     contracts_queried_total.labels(query_type='search').inc()
@@ -141,14 +224,28 @@ async def get_contract(contract_id: str) -> Dict:
     Returns:
         Contract details or error
     """
-    if contract_id not in contract_store:
-        return {
-            "error": f"Contract {contract_id} not found",
-        }
-    
-    contracts_queried_total.labels(query_type='get').inc()
-    contract = contract_store[contract_id]
-    return contract.model_dump(mode="json")
+    if contracts_collection is not None:
+        # Using MongoDB
+        contract_doc = contracts_collection.find_one({"contract_id": contract_id})
+        if not contract_doc:
+            return {
+                "error": f"Contract {contract_id} not found",
+            }
+        
+        # Remove MongoDB's _id field
+        contract_doc.pop("_id", None)
+        contracts_queried_total.labels(query_type='get').inc()
+        return contract_doc
+    else:
+        # Using in-memory storage
+        if contract_id not in contract_store:
+            return {
+                "error": f"Contract {contract_id} not found",
+            }
+        
+        contracts_queried_total.labels(query_type='get').inc()
+        contract = contract_store[contract_id]
+        return contract.model_dump(mode="json")
 
 
 @mcp.tool()
@@ -186,34 +283,54 @@ async def create_contract(
     Returns:
         Created contract details or error
     """
-    if contract_id in contract_store:
-        return {
-            "error": f"Contract {contract_id} already exists",
-        }
-    
     try:
         contract = Contract(
             contract_id=contract_id,
             contract_type=ContractType(contract_type),
             counterparty=counterparty,
             currency_pair=CurrencyPair(currency_pair) if currency_pair else None,
-            notional_base=notional_base,
-            notional_quote=notional_quote,
-            strike_rate=strike_rate,
-            fixed_rate=fixed_rate,
-            notional=notional,
-            currency=currency,
+            notional_base=notional_base if notional_base else None,
+            notional_quote=notional_quote if notional_quote else None,
+            strike_rate=strike_rate if strike_rate else None,
+            fixed_rate=fixed_rate if fixed_rate else None,
+            notional=notional if notional else None,
+            currency=currency if currency else None,
             trade_date=date.fromisoformat(trade_date),
             maturity_date=date.fromisoformat(maturity_date),
         )
         
-        contract_store[contract_id] = contract
-        contracts_in_registry.set(len(contract_store))
-        
-        return {
-            "message": "Contract created successfully",
-            "contract": contract.model_dump(mode="json"),
-        }
+        if contracts_collection is not None:
+            # Using MongoDB
+            try:
+                contract_dict = contract.model_dump(mode="json")
+                contracts_collection.insert_one(contract_dict)
+                contracts_in_registry.set(contracts_collection.count_documents({}))
+                
+                # Remove _id for response
+                contract_dict.pop("_id", None)
+                
+                return {
+                    "message": "Contract created successfully",
+                    "contract": contract_dict,
+                }
+            except DuplicateKeyError:
+                return {
+                    "error": f"Contract {contract_id} already exists",
+                }
+        else:
+            # Using in-memory storage
+            if contract_id in contract_store:
+                return {
+                    "error": f"Contract {contract_id} already exists",
+                }
+            
+            contract_store[contract_id] = contract
+            contracts_in_registry.set(len(contract_store))
+            
+            return {
+                "message": "Contract created successfully",
+                "contract": contract.model_dump(mode="json"),
+            }
     except Exception as e:
         return {
             "error": f"Failed to create contract: {str(e)}",
@@ -239,28 +356,60 @@ async def write_risk_memo(
     Returns:
         Confirmation or error
     """
-    if contract_id not in contract_store:
-        return {
-            "error": f"Contract {contract_id} not found",
+    # Check if contract exists
+    if contracts_collection is not None:
+        # Using MongoDB
+        contract_exists = contracts_collection.find_one({"contract_id": contract_id})
+        if not contract_exists:
+            return {
+                "error": f"Contract {contract_id} not found",
+            }
+        
+        # Count existing memos for this contract
+        memo_count = memos_collection.count_documents({"contract_id": contract_id})
+        
+        memo = {
+            "memo_id": f"memo-{contract_id}-{memo_count + 1}",
+            "contract_id": contract_id,
+            "title": memo_title,
+            "content": memo_content,
+            "breach_alert": breach_alert,
+            "created_at": datetime.utcnow().isoformat(),
         }
-    
-    memo = {
-        "memo_id": f"memo-{len(memo_store.get(contract_id, []))+ 1}",
-        "contract_id": contract_id,
-        "title": memo_title,
-        "content": memo_content,
-        "risk_metrics": risk_metrics or {},
-        "breach_alert": breach_alert,
-        "created_at": datetime.utcnow().isoformat(),
-    }
-    
-    if contract_id not in memo_store:
-        memo_store[contract_id] = []
-    
-    memo_store[contract_id].append(memo)
-    
-    # Update contract's last risk memo date
-    contract_store[contract_id].last_risk_memo_date = date.today()
+        
+        memos_collection.insert_one(memo)
+        
+        # Update contract's last risk memo date
+        contracts_collection.update_one(
+            {"contract_id": contract_id},
+            {"$set": {"last_risk_memo_date": date.today().isoformat()}}
+        )
+        
+        # Remove _id for response
+        memo.pop("_id", None)
+    else:
+        # Using in-memory storage
+        if contract_id not in contract_store:
+            return {
+                "error": f"Contract {contract_id} not found",
+            }
+        
+        memo = {
+            "memo_id": f"memo-{contract_id}-{len(memo_store.get(contract_id, [])) + 1}",
+            "contract_id": contract_id,
+            "title": memo_title,
+            "content": memo_content,
+            "breach_alert": breach_alert,
+            "created_at": datetime.utcnow().isoformat(),
+        }
+        
+        if contract_id not in memo_store:
+            memo_store[contract_id] = []
+        
+        memo_store[contract_id].append(memo)
+        
+        # Update contract's last risk memo date
+        contract_store[contract_id].last_risk_memo_date = date.today()
     
     # Track memo written
     risk_memos_written_total.labels(
@@ -285,12 +434,29 @@ async def get_risk_memos(contract_id: str) -> Dict:
     Returns:
         List of memos or error
     """
-    if contract_id not in contract_store:
-        return {
-            "error": f"Contract {contract_id} not found",
-        }
-    
-    memos = memo_store.get(contract_id, [])
+    # Check if contract exists
+    if contracts_collection is not None:
+        # Using MongoDB
+        contract_exists = contracts_collection.find_one({"contract_id": contract_id})
+        if not contract_exists:
+            return {
+                "error": f"Contract {contract_id} not found",
+            }
+        
+        # Get all memos for this contract
+        cursor = memos_collection.find({"contract_id": contract_id}).sort("created_at", -1)
+        memos = []
+        for doc in cursor:
+            doc.pop("_id", None)
+            memos.append(doc)
+    else:
+        # Using in-memory storage
+        if contract_id not in contract_store:
+            return {
+                "error": f"Contract {contract_id} not found",
+            }
+        
+        memos = memo_store.get(contract_id, [])
     
     return {
         "contract_id": contract_id,
@@ -307,7 +473,17 @@ async def list_all_contracts() -> Dict:
     Returns:
         Dictionary with list of all contracts
     """
-    contracts = [contract.model_dump(mode="json") for contract in contract_store.values()]
+    if contracts_collection is not None:
+        # Using MongoDB
+        cursor = contracts_collection.find({})
+        contracts = []
+        for doc in cursor:
+            doc.pop("_id", None)
+            contracts.append(doc)
+    else:
+        # Using in-memory storage
+        contracts = [contract.model_dump(mode="json") for contract in contract_store.values()]
+    
     contracts_queried_total.labels(query_type='list_all').inc()
     
     return {

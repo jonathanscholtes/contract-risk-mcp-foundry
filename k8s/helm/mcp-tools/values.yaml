@@ -12,6 +12,11 @@ azureAiProject:
   endpoint: ""  # Set via --set azureAiProject.endpoint=<your-endpoint>
   managedIdentityClientId: ""  # Set via --set azureAiProject.managedIdentityClientId=<client-id>
 
+# Azure Key Vault configuration
+keyVault:
+  name: ""  # Set via --set keyVault.name=<keyvault-name>
+  tenantId: ""  # Set via --set keyVault.tenantId=<tenant-id>
+
 # Agent names
 agents:
   portfolioScan: "PortfolioScanAnalyst"
@@ -29,6 +34,10 @@ mcpContracts:
   image: mcp-contracts
   tag: 0.1.0
   replicas: 2
+  mongodb:
+    database: "contracts_db"
+    contractsCollection: "contracts"
+    memosCollection: "risk_memos"
 
 # MCP Risk
 mcpRisk:

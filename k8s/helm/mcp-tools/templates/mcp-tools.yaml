@@ -60,6 +60,41 @@ spec:
         - name: MARKET_SHOCK_THRESHOLD
           value: "{{ .Values.thresholds.marketShockThreshold }}"
 ---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mcp-contracts-sa
+  namespace: tools
+  annotations:
+    azure.workload.identity/client-id: {{ .Values.azureAiProject.managedIdentityClientId | quote }}
+---
+apiVersion: secrets-store.csi.x-k8s.io/v1
+kind: SecretProviderClass
+metadata:
+  name: mcp-contracts-secrets
+  namespace: tools
+spec:
+  provider: azure
+  parameters:
+    usePodIdentity: "false"
+    useVMManagedIdentity: "false"
+    clientID: {{ .Values.azureAiProject.managedIdentityClientId | quote }}
+    keyvaultName: {{ .Values.keyVault.name | quote }}
+    cloudName: ""
+    objects: |
+      array:
+        - |
+          objectName: mongodb-connection-string
+          objectType: secret
+          objectVersion: ""
+    tenantId: {{ .Values.keyVault.tenantId | quote }}
+  secretObjects:
+  - secretName: mongodb-secrets
+    type: Opaque
+    data:
+    - objectName: mongodb-connection-string
+      key: connection-string
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -74,16 +109,41 @@ spec:
     metadata:
       labels:
         app: mcp-contracts
+        azure.workload.identity/use: "true"
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/port: "9090"
     spec:
+      serviceAccountName: mcp-contracts-sa
       containers:
       - name: mcp-contracts
         image: {{ .Values.registry }}/{{ .Values.mcpContracts.image }}:{{ .Values.mcpContracts.tag }}
         ports:
         - containerPort: 80
           name: http
+        env:
+        - name: MONGODB_CONNECTION_STRING
+          valueFrom:
+            secretKeyRef:
+              name: mongodb-secrets
+              key: connection-string
+        - name: MONGODB_DATABASE
+          value: {{ .Values.mcpContracts.mongodb.database | quote }}
+        - name: MONGODB_CONTRACTS_COLLECTION
+          value: {{ .Values.mcpContracts.mongodb.contractsCollection | quote }}
+        - name: MONGODB_MEMOS_COLLECTION
+          value: {{ .Values.mcpContracts.mongodb.memosCollection | quote }}
+        volumeMounts:
+        - name: secrets-store
+          mountPath: "/mnt/secrets-store"
+          readOnly: true
+      volumes:
+      - name: secrets-store
+        csi:
+          driver: secrets-store.csi.k8s.io
+          readOnly: true
+          volumeAttributes:
+            secretProviderClass: "mcp-contracts-secrets"
 ---
 apiVersion: v1
 kind: Service
