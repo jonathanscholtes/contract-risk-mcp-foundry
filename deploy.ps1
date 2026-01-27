@@ -493,6 +493,13 @@ if ($pythonAvailable -and -not $skipAgentDeployment) {
 
         if ($LASTEXITCODE -eq 0) {
             Write-Host "`n[OK] Foundry agents deployed successfully" -ForegroundColor Green
+            
+            # Restart orchestrator to refresh credentials and connect to agents
+            Write-Host "`nRestarting agent orchestrator to connect to deployed agents..." -ForegroundColor Yellow
+            kubectl rollout restart deployment agent-orchestrator -n tools
+            Write-Host "Waiting for orchestrator to restart..." -ForegroundColor Gray
+            kubectl rollout status deployment agent-orchestrator -n tools --timeout=2m
+            Write-Host "[OK] Orchestrator restarted successfully" -ForegroundColor Green
         } else {
             Write-Host "`n[WARNING] Foundry agent deployment encountered issues" -ForegroundColor Yellow
             Write-Host "You can deploy agents manually later using:" -ForegroundColor Gray
