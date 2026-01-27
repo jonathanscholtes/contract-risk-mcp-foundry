@@ -19,7 +19,7 @@ param (
 )
 
 # Import common functions
-Import-Module "$PSScriptRoot\common\DeploymentFunctions.ps1" -Force
+Import-Module "$PSScriptRoot\common\DeploymentFunctions.psm1" -Force
 
 Write-Host "`n=== Deploying Foundry Agents ===" -ForegroundColor Cyan
 

@@ -208,9 +208,6 @@ async def consume_jobs():
         job_queue = await channel.declare_queue("risk.jobs", durable=True)
         await job_queue.bind(exchange, routing_key="risk.job")
         
-        result_queue = await channel.declare_queue("risk.results", durable=True)
-        await result_queue.bind(exchange, routing_key="risk.result")
-        
         print("Waiting for jobs...")
         
         async with job_queue.iterator() as queue_iter:

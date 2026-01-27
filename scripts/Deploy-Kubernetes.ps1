@@ -25,7 +25,7 @@ param (
 )
 
 # Import common functions
-Import-Module "$PSScriptRoot\common\DeploymentFunctions.ps1" -Force
+Import-Module "$PSScriptRoot\common\DeploymentFunctions.psm1" -Force
 
 Write-Host "`n=== Deploying Platform Components to AKS ===" -ForegroundColor Cyan
 
@@ -128,7 +128,7 @@ $grafanaIP = Get-ServiceExternalIP -ServiceName "grafana" -Namespace "platform" 
 Write-Host "`n[OK] Platform components deployed successfully" -ForegroundColor Green
 
 # Return service endpoints
-return @{
+return [PSCustomObject]@{
     mcpContractsIP = $mcpContractsIP
     mcpRiskIP = $mcpRiskIP
     mcpMarketIP = $mcpMarketIP

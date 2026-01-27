@@ -12,4 +12,4 @@ COPY apps/risk-worker /app/risk-worker
 RUN pip install --no-cache-dir /app/risk-worker
 
 # Run the worker
-CMD ["python", "-m", "risk-worker.src.worker"]
+CMD ["python", "-u", "-m", "risk-worker.src.worker"]

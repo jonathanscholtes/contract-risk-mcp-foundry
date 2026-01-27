@@ -19,7 +19,7 @@ spec:
         app: risk-worker
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "8000"
+        prometheus.io/port: "9090"
     spec:
       containers:
       - name: risk-worker

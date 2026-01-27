@@ -25,11 +25,7 @@ param (
 )
 
 # Import common functions
-Import-Module "$PSScriptRoot\common\DeploymentFunctions.ps1" -Force
-
-# Set UTF-8 encoding
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$OutputEncoding = [System.Text.Encoding]::UTF8
+Import-Module "$PSScriptRoot\common\DeploymentFunctions.psm1" -Force
 
 # Default AI location to primary location if not specified
 if (-not $AILocation) {
@@ -82,7 +78,7 @@ Write-Host "  Container Registry: $($outputs.containerRegistryName.value)" -Fore
 Write-Host "  AI Project Endpoint: $($outputs.aiProjectEndpoint.value)" -ForegroundColor White
 
 # Return outputs as object
-return @{
+return [PSCustomObject]@{
     managedIdentityName = $outputs.managedIdentityName.value
     managedIdentityClientId = $outputs.managedIdentityClientId.value
     resourceGroupName = $outputs.resourceGroupName.value
