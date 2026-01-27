@@ -1,7 +1,17 @@
 param location string
 param keyVaultName string
 
+@secure()
+@description('MongoDB admin username')
+param mongoDbUsername string = 'mongoadmin'
 
+@secure()
+@description('MongoDB admin password')
+param mongoDbPassword string
+
+@secure()
+@description('MongoDB connection string')
+param mongoDbConnectionString string
 
 resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' = {
   name: keyVaultName
@@ -39,6 +49,30 @@ resource rabbitmqPassword 'Microsoft.KeyVault/vaults/secrets@2022-07-01' = {
   }
 }
 
+// Store MongoDB credentials
+resource mongoDbUsernameSecret 'Microsoft.KeyVault/vaults/secrets@2022-07-01' = {
+  parent: keyVault
+  name: 'mongodb-username'
+  properties: {
+    value: mongoDbUsername
+  }
+}
+
+resource mongoDbPasswordSecret 'Microsoft.KeyVault/vaults/secrets@2022-07-01' = {
+  parent: keyVault
+  name: 'mongodb-password'
+  properties: {
+    value: mongoDbPassword
+  }
+}
+
+resource mongoDbConnectionStringSecret 'Microsoft.KeyVault/vaults/secrets@2022-07-01' = {
+  parent: keyVault
+  name: 'mongodb-connection-string'
+  properties: {
+    value: mongoDbConnectionString
+  }
+}
 
 output keyVaultId string = keyVault.id
 output keyVaultUri string = keyVault.properties.vaultUri

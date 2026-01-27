@@ -64,7 +64,6 @@ Continuously monitor a portfolio of contracts for **FX + Interest Rate risk** an
 contract-risk-mcp-foundry/
   README.md
   PROJECT_CREATE.md
-  .env.example
 
   apps/
     agent-orchestrator/      # Event-driven orchestration service
@@ -96,8 +95,6 @@ contract-risk-mcp-foundry/
     deploy_tools.sh
     deploy_workers.sh
     seed_contracts.py
-    simulate_market.py
-    load_test_tools.py
 ```
 
 ---

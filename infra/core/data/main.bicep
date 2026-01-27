@@ -20,110 +20,45 @@ param location string
 @description('Name of the User Assigned Managed Identity to assign to deployed services')
 param identityName string
 
-@description('Optional: Azure AD Object ID of the deploying user for CosmosDB access')
-param userObjectId string = ''
+@secure()
+@description('Admin password for MongoDB cluster')
+@minLength(8)
+@maxLength(128)
+param mongoAdminPassword string
 
-var storageAccountName ='sa${projectName}${resourceToken}'
+var storageAccountName = 'sa${projectName}${resourceToken}'
 
 module storage 'storage/main.bicep' = {
-name: 'storage'
-params:{
-  identityName:identityName
-   location:location
-   storageAccountName:storageAccountName
-
-}
-}
-
-module cosmosDb 'cosmosdb/main.bicep' = {
-  name: 'cosmosDb'
- 
+  name: 'storage'
   params: {
-    accountName: 'cosmos-${projectName}-${environmentName}-${resourceToken}'
-    location: location
-    databaseName: 'audit-poc'
     identityName: identityName
-    userObjectId: userObjectId
-    containers: [
-  {
-    name: 'vendors' // Container for storing chat sessions and messages (chat history)
-    partitionKeyPaths: [
-      '/engagement_id' 
-    ]
-    ttlValue: 0 // Time-to-live (TTL) for automatic deletion of data after 24 hours (86400 seconds)
-    indexingPolicy: {
-      automatic: true // Automatically index new data
-      indexingMode: 'consistent' // Ensure data is indexed immediately
-      includedPaths: [
-        {
-          path: '/engagement_id/?' 
-        }
-      ]
-      excludedPaths: [
-        {
-          path: '/*' // Exclude all other paths from indexing
-        }
-      ]
-    }
-    vectorEmbeddingPolicy: {
-      vectorEmbeddings: [] // Placeholder for future vector embedding configuration
-    }
+    location: location
+    storageAccountName: storageAccountName
   }
-  {
-    name: 'invoices' // Container for storing chat sessions and messages (chat history)
-    partitionKeyPaths: [
-      '/engagement_id' 
-    ]
-    ttlValue: 0 // Time-to-live (TTL) for automatic deletion of data after 24 hours (86400 seconds)
-    indexingPolicy: {
-      automatic: true // Automatically index new data
-      indexingMode: 'consistent' // Ensure data is indexed immediately
-      includedPaths: [
-        {
-          path: '/engagement_id/?' 
-        }
-      ]
-      excludedPaths: [
-        {
-          path: '/*' // Exclude all other paths from indexing
-        }
-      ]
+}
+
+module mongoDb 'mongodb/main.bicep' = {
+  name: 'mongoDb'
+  params: {
+    clusterName: 'mongo-${projectName}-${resourceToken}'
+    location: location
+    tags: {
+      environment: environmentName
+      project: projectName
     }
-    vectorEmbeddingPolicy: {
-      vectorEmbeddings: [] // Placeholder for future vector embedding configuration
-    }
-  }
-  {
-    name: 'payments' // Container for storing chat sessions and messages (chat history)
-    partitionKeyPaths: [
-      '/engagement_id' 
-    ]
-    ttlValue: 0 // Time-to-live (TTL) for automatic deletion of data after 24 hours (86400 seconds)
-    indexingPolicy: {
-      automatic: true // Automatically index new data
-      indexingMode: 'consistent' // Ensure data is indexed immediately
-      includedPaths: [
-        {
-          path: '/engagement_id/?' 
-        }
-      ]
-      excludedPaths: [
-        {
-          path: '/*' // Exclude all other paths from indexing
-        }
-      ]
-    }
-    vectorEmbeddingPolicy: {
-      vectorEmbeddings: [] // Placeholder for future vector embedding configuration
-    }
-  }
- 
-]
+    adminPassword: mongoAdminPassword
+    serverVersion: '8.0'
+    shardCount: 1
+    storageSizeGb: 32
+    highAvailabilityMode: 'Disabled'
+    computeTier: 'M10'
   }
 }
 
 output storageAccountName string = storageAccountName
 output storageAccountId string = storage.outputs.storageAccountId
-output cosmosdbEndpoint string = cosmosDb.outputs.cosmosdbEndpoint
-output cosmosdbAccountName string = cosmosDb.outputs.accountName
+output mongoDbClusterName string = mongoDb.outputs.clusterName
+output mongoDbUsername string = mongoDb.outputs.adminUsername
+output mongoDbConnectionString string = mongoDb.outputs.connectionString
+output mongoDbEndpoint string = mongoDb.outputs.endpoint
 

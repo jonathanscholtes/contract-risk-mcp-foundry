@@ -125,6 +125,10 @@ if ($missingTools.Count -gt 0) {
 
 Write-Host "All required tools found`n" -ForegroundColor Green
 
+# Generate secure MongoDB admin password (16 chars with upper, lower, numbers, symbols)
+$chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*'
+$mongoAdminPassword = -join ((1..16) | ForEach-Object { $chars[(Get-Random -Maximum $chars.Length)] })
+Write-Host "Generated MongoDB admin password" -ForegroundColor Green
 
 $deploymentNameInfra = "deployment-risk-$resourceToken"
 $templateFile = "infra/main.bicep"
@@ -140,6 +144,7 @@ $deploymentOutput = az deployment sub create `
         location=$Location `
         AIlocation=$AILocation `
         userObjectId=$UserObjectId `
+        mongoAdminPassword=$mongoAdminPassword `
     --query "properties.outputs"
 
 # Parse deployment outputs
@@ -154,7 +159,9 @@ $applicationInsightsName = $deploymentOutputJsonInfra.applicationInsightsName.va
 $keyVaultName = $deploymentOutputJsonInfra.keyVaultName.value
 $OpenAIEndPoint = $deploymentOutputJsonInfra.OpenAIEndPoint.value
 $aiProjectEndpoint = $deploymentOutputJsonInfra.aiProjectEndpoint.value
-$cosmosdbEndpoint = $deploymentOutputJsonInfra.cosmosdbEndpoint.value
+$mongoDbClusterName = $deploymentOutputJsonInfra.mongoDbClusterName.value
+$mongoDbConnectionString = $deploymentOutputJsonInfra.mongoDbConnectionString.value
+$mongoDbEndpoint = $deploymentOutputJsonInfra.mongoDbEndpoint.value
 #$searchServicename = $deploymentOutputJsonInfra.searchServicename.value
 $containerRegistryName = $deploymentOutputJsonInfra.containerRegistryName.value
 $aksName = $deploymentOutputJsonInfra.aksName.value
@@ -507,9 +514,5 @@ if (![string]::IsNullOrEmpty($grafanaIP)) {
     Write-Host "   Grafana:  kubectl port-forward -n platform svc/grafana 3000:3000" -ForegroundColor Gray
 }
 Write-Host "   RabbitMQ: kubectl port-forward -n rabbitmq svc/rabbitmq 15672:15672" -ForegroundColor Gray
-Write-Host ""
-Write-Host "3. Seed sample data:" -ForegroundColor Yellow
-Write-Host "   python scripts/seed_contracts.py" -ForegroundColor Gray
-Write-Host ""
-Write-Host "4. Run EURUSD shock demo:" -ForegroundColor Yellow
-Write-Host "   python scripts/demo_eurusd_shock.py" -ForegroundColor Gray
+
+

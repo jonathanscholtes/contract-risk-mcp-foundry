@@ -26,6 +26,12 @@ param AIlocation string
 @description('Azure AD Object ID of the deploying user for CosmosDB access')
 param userObjectId string
 
+@secure()
+@description('Admin password for MongoDB cluster')
+@minLength(8)
+@maxLength(128)
+param mongoAdminPassword string
+
 resource resourceGroup 'Microsoft.Resources/resourceGroups@2024-03-01' = {
   name: 'rg-${projectName}-${environmentName}-${location}-${resourceToken}'
   location: location
@@ -38,16 +44,6 @@ module managedIdentityModule 'core/security/managed-identity.bicep' = {
   params: {
     name: 'id-${projectName}-${environmentName}'
     location: location
-  }
-}
-
-// Create Key Vault
-module keyVaultModule 'core/security/keyvault.bicep' = {
-  name: 'keyVault'
-  scope: resourceGroup
-  params: {
-    location: location
-    keyVaultName: 'kv${projectName}${resourceToken}'
   }
 }
 
@@ -71,8 +67,22 @@ module data 'core/data/main.bicep' = {
     environmentName:environmentName
     location: location
     identityName:managedIdentityModule.outputs.managedIdentityName
-    userObjectId: userObjectId
+    mongoAdminPassword: mongoAdminPassword
   }
+}
+
+// Create Key Vault and store MongoDB credentials
+module keyVaultModule 'core/security/keyvault.bicep' = {
+  name: 'keyVault'
+  scope: resourceGroup
+  params: {
+    location: location
+    keyVaultName: 'kv${projectName}${resourceToken}'
+    mongoDbUsername: data.outputs.mongoDbUsername
+    mongoDbPassword: mongoAdminPassword
+    mongoDbConnectionString: data.outputs.mongoDbConnectionString
+  }
+  dependsOn: [data]
 }
 
 module platform 'core/platform/main.bicep' = { 
@@ -131,6 +141,9 @@ output applicationInsightsName string = monitor.outputs.applicationInsightsName
 output keyVaultName string = keyVaultModule.outputs.keyVaultName
 output OpenAIEndPoint string = ai.outputs.OpenAIEndPoint 
 output aiProjectEndpoint string = ai.outputs.aiProjectEndpoint
-output cosmosdbEndpoint string = data.outputs.cosmosdbEndpoint
+output mongoDbClusterName string = data.outputs.mongoDbClusterName
+output mongoDbUsername string = data.outputs.mongoDbUsername
+output mongoDbConnectionString string = data.outputs.mongoDbConnectionString
+output mongoDbEndpoint string = data.outputs.mongoDbEndpoint
 output containerRegistryName string = platform.outputs.containerRegistryName
 output aksName string = platform.outputs.aksName
