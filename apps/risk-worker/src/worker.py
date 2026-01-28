@@ -10,10 +10,12 @@ import os
 import json
 import asyncio
 from datetime import datetime
-from typing import Dict
+from typing import Dict, Optional
 import aio_pika
 import numpy as np
 from prometheus_client import Counter, Histogram, Gauge, start_http_server
+from pymongo import MongoClient
+from pymongo.errors import PyMongoError
 
 # Prometheus metrics
 risk_calculations_total = Counter(
@@ -43,6 +45,47 @@ RABBITMQ_PORT = int(os.getenv("RABBITMQ_PORT", "5672"))
 RABBITMQ_USER = os.getenv("RABBITMQ_USER", "guest")
 RABBITMQ_PASS = os.getenv("RABBITMQ_PASS", "guest")
 
+# MongoDB configuration
+MONGODB_CONNECTION_STRING = os.getenv("MONGODB_CONNECTION_STRING", "")
+MONGODB_CONTRACTS_DB = os.getenv("MONGODB_CONTRACTS_DB", "contracts_db")
+MONGODB_MARKET_DB = os.getenv("MONGODB_MARKET_DB", "market_db")
+MONGODB_CONTRACTS_COLLECTION = os.getenv("MONGODB_CONTRACTS_COLLECTION", "contracts")
+MONGODB_MARKET_COLLECTION = os.getenv("MONGODB_MARKET_COLLECTION", "market_data")
+
+# MongoDB clients
+mongo_client: Optional[MongoClient] = None
+contracts_collection = None
+market_collection = None
+
+
+def init_mongodb():
+    """Initialize MongoDB connection."""
+    global mongo_client, contracts_collection, market_collection
+    
+    if not MONGODB_CONNECTION_STRING:
+        print("WARNING: MONGODB_CONNECTION_STRING not set. Using fallback values.")
+        return False
+    
+    try:
+        mongo_client = MongoClient(MONGODB_CONNECTION_STRING)
+        
+        # Contracts database
+        contracts_db = mongo_client[MONGODB_CONTRACTS_DB]
+        contracts_collection = contracts_db[MONGODB_CONTRACTS_COLLECTION]
+        
+        # Market database
+        market_db = mongo_client[MONGODB_MARKET_DB]
+        market_collection = market_db[MONGODB_MARKET_COLLECTION]
+        
+        # Test connection
+        mongo_client.admin.command('ping')
+        print(f"Successfully connected to MongoDB")
+        return True
+    except PyMongoError as e:
+        print(f"Failed to connect to MongoDB: {e}")
+        print("Will use fallback values for calculations.")
+        return False
+
 
 async def get_rabbitmq_connection():
     """Create RabbitMQ connection."""
@@ -55,7 +98,7 @@ def compute_fx_var(params: Dict, contract_data: Dict) -> Dict:
     """
     Compute FX VaR using Monte Carlo simulation.
     
-    Simplified implementation for MVP.
+    Uses market data from MongoDB for volatility.
     """
     horizon_days = params.get("horizon_days", 1)
     confidence = params.get("confidence", 0.99)
@@ -63,15 +106,27 @@ def compute_fx_var(params: Dict, contract_data: Dict) -> Dict:
     
     # Get contract details
     notional = contract_data.get("notional_base", 1000000.0)
+    currency_pair = contract_data.get("currency_pair")
     
-    # Assume 10% annualized volatility for simplicity
-    volatility = 0.10
+    # Fetch volatility from market data
+    volatility = 0.10  # Default fallback
+    if market_collection is not None and currency_pair:
+        try:
+            market_doc = market_collection.find_one({"currency_pair": currency_pair})
+            if market_doc and "volatility" in market_doc:
+                volatility = market_doc["volatility"]
+                print(f"Using volatility {volatility} for {currency_pair} from market data")
+            else:
+                print(f"No market data found for {currency_pair}, using default volatility {volatility}")
+        except PyMongoError as e:
+            print(f"Error fetching market data: {e}, using default volatility {volatility}")
+    else:
+        print(f"Market collection not available, using default volatility {volatility}")
     
     # Scale to horizon
     horizon_vol = volatility * np.sqrt(horizon_days / 252)
     
     # Generate random returns
-    np.random.seed(42)  # For reproducibility in demo
     returns = np.random.normal(0, horizon_vol, sims)
     
     # Compute P&L
@@ -86,6 +141,8 @@ def compute_fx_var(params: Dict, contract_data: Dict) -> Dict:
         "confidence": confidence,
         "horizon_days": horizon_days,
         "simulations": sims,
+        "volatility_used": volatility,
+        "currency_pair": currency_pair,
         "as_of": datetime.utcnow().isoformat(),
     }
 
@@ -129,17 +186,33 @@ async def process_job(job_data: Dict) -> Dict:
     # Track calculation start time
     start_time = datetime.utcnow()
     
+    # Fetch contract data from MongoDB
+    contract_data = None
+    if contracts_collection is not None:
+        try:
+            contract_data = contracts_collection.find_one({"contract_id": contract_id})
+            if contract_data:
+                print(f"Loaded contract {contract_id} from database")
+                # Remove MongoDB _id field
+                contract_data.pop("_id", None)
+            else:
+                print(f"Contract {contract_id} not found in database")
+        except PyMongoError as e:
+            print(f"Error fetching contract from MongoDB: {e}")
+    
+    # Fallback to mock data if not found
+    if contract_data is None:
+        print(f"Using fallback data for contract {contract_id}")
+        contract_data = {
+            "contract_id": contract_id,
+            "notional_base": 1000000.0,
+            "notional": 5000000.0,
+            "fixed_rate": 0.045,
+            "currency": "USD",
+        }
+    
     # Simulate some processing time
     await asyncio.sleep(2)
-    
-    # Mock contract data (in production, fetch from contract service)
-    contract_data = {
-        "contract_id": contract_id,
-        "notional_base": 1000000.0,
-        "notional": 5000000.0,
-        "fixed_rate": 0.045,
-        "currency": "USD",
-    }
     
     try:
         if job_type == "fx_var":
@@ -225,6 +298,9 @@ async def consume_jobs():
 
 
 if __name__ == "__main__":
+    # Initialize MongoDB
+    init_mongodb()
+    
     # Start Prometheus metrics server on port 9090
     start_http_server(9090)
     print("Prometheus metrics server started on port 9090")

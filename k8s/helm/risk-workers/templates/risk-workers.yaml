@@ -3,6 +3,41 @@ kind: Namespace
 metadata:
   name: workers
 ---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: risk-worker-sa
+  namespace: workers
+  annotations:
+    azure.workload.identity/client-id: {{ .Values.azureAiProject.managedIdentityClientId | quote }}
+---
+apiVersion: secrets-store.csi.x-k8s.io/v1
+kind: SecretProviderClass
+metadata:
+  name: risk-worker-secrets
+  namespace: workers
+spec:
+  provider: azure
+  parameters:
+    usePodIdentity: "false"
+    useVMManagedIdentity: "false"
+    clientID: {{ .Values.azureAiProject.managedIdentityClientId | quote }}
+    keyvaultName: {{ .Values.keyVault.name | quote }}
+    cloudName: ""
+    objects: |
+      array:
+        - |
+          objectName: mongodb-connection-string
+          objectType: secret
+          objectVersion: ""
+    tenantId: {{ .Values.keyVault.tenantId | quote }}
+  secretObjects:
+  - secretName: mongodb-secrets
+    type: Opaque
+    data:
+    - objectName: mongodb-connection-string
+      key: connection-string
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -17,10 +52,12 @@ spec:
     metadata:
       labels:
         app: risk-worker
+        azure.workload.identity/use: "true"
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/port: "9090"
     spec:
+      serviceAccountName: risk-worker-sa
       containers:
       - name: risk-worker
         image: {{ .Values.registry }}/{{ .Values.riskWorker.image }}:{{ .Values.riskWorker.tag }}
@@ -33,13 +70,30 @@ spec:
           value: {{ .Values.rabbitmq.user }}
         - name: RABBITMQ_PASS
           value: {{ .Values.rabbitmq.password }}
-        resources:
-          requests:
-            cpu: 100m
-            memory: 256Mi
-          limits:
-            cpu: 1000m
-            memory: 1Gi
+        - name: MONGODB_CONNECTION_STRING
+          valueFrom:
+            secretKeyRef:
+              name: mongodb-secrets
+              key: connection-string
+        - name: MONGODB_CONTRACTS_DB
+          value: {{ .Values.mcpContracts.mongodb.database | quote }}
+        - name: MONGODB_MARKET_DB
+          value: {{ .Values.mcpMarket.mongodb.database | quote }}
+        - name: MONGODB_CONTRACTS_COLLECTION
+          value: {{ .Values.mcpContracts.mongodb.contractsCollection | quote }}
+        - name: MONGODB_MARKET_COLLECTION
+          value: {{ .Values.mcpMarket.mongodb.marketCollection | quote }}
+        volumeMounts:
+        - name: secrets-store
+          mountPath: "/mnt/secrets-store"
+          readOnly: true
+      volumes:
+      - name: secrets-store
+        csi:
+          driver: secrets-store.csi.k8s.io
+          readOnly: true
+          volumeAttributes:
+            secretProviderClass: "risk-worker-secrets"
 ---
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject

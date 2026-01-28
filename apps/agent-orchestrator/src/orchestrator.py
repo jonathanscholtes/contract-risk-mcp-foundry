@@ -25,6 +25,7 @@ from azure.identity.aio import DefaultAzureCredential
 from azure.ai.projects.aio import AIProjectClient
 from alpha_vantage.foreignexchange import ForeignExchange
 from pymongo import MongoClient
+from urllib.parse import quote_plus
 
 # Configuration
 RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "rabbitmq")
@@ -45,11 +46,13 @@ FX_VAR_THRESHOLD = float(os.getenv("FX_VAR_THRESHOLD", "100000"))  # $100k
 IR_DV01_THRESHOLD = float(os.getenv("IR_DV01_THRESHOLD", "50000"))  # $50k
 MARKET_SHOCK_THRESHOLD = float(os.getenv("MARKET_SHOCK_THRESHOLD", "2.0"))  # 2%
 
+
 # Market data configuration
 MONGODB_CONNECTION_STRING = os.getenv("MONGODB_CONNECTION_STRING", "")
 MONGODB_DATABASE = os.getenv("MONGODB_DATABASE", "market_db")
 MONGODB_MARKET_COLLECTION = os.getenv("MONGODB_MARKET_COLLECTION", "market_data")
 ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY", "demo")
+USE_FAKE_MARKET_DATA = os.getenv("USE_FAKE_MARKET_DATA", "true").lower() == "true" or ALPHA_VANTAGE_API_KEY == "demo"
 
 # Currency pairs to monitor
 MARKET_CURRENCY_PAIRS = [
@@ -96,55 +99,66 @@ Context:
 {json.dumps(context, indent=2)}
 """
     
-    try:
-        async with DefaultAzureCredential() as credential:
-            async with AIProjectClient(
-                endpoint=AZURE_AI_PROJECT_ENDPOINT,
-                credential=credential
-            ) as project_client:
-                
-                # Retrieve the agent by name
-                agent = await project_client.agents.get(agent_name=agent_name)
-                print(f"[Agent] Retrieved {agent.name} (id: {agent.id}, version: {agent.versions.latest.version})")
-                
-                async with project_client.get_openai_client() as openai_client:
-                    # Create a new conversation for this task
-                    conversation = await openai_client.conversations.create()
-                    print(f"[Conversation] Created conversation (id: {conversation.id})")
-                    
-                    # Add user message to conversation
-                    await openai_client.conversations.items.create(
-                        conversation_id=conversation.id,
-                        items=[{
-                            "type": "message",
-                            "role": "user",
-                            "content": user_message
-                        }]
-                    )
-                    
-                    # Get response from agent
-                    response = await openai_client.responses.create(
-                        conversation=conversation.id,
-                        extra_body={
-                            "agent": {
-                                "name": agent.name,
-                                "type": "agent_reference"
-                            }
-                        },
-                        input=""
-                    )
-                    
-                    print(f"[Agent Response] Received response from agent")
-                    return {
-                        "status": "success",
-                        "output": response.output_text,
-                        "conversation_id": conversation.id,
-                        "agent_id": agent.id
-                    }
-    
-    except Exception as e:
-        print(f"[Agent Error] Failed to invoke agent: {e}")
-        return {"status": "error", "error": str(e)}
+    max_retries = 5
+    delay = 2  # seconds
+    for attempt in range(1, max_retries + 1):
+        try:
+            async with DefaultAzureCredential() as credential:
+                async with AIProjectClient(
+                    endpoint=AZURE_AI_PROJECT_ENDPOINT,
+                    credential=credential
+                ) as project_client:
+                    # Retrieve the agent by name
+                    agent = await project_client.agents.get(agent_name=agent_name)
+                    print(f"[Agent] Retrieved {agent.name} (id: {agent.id}, version: {agent.versions.latest.version})")
+                    async with project_client.get_openai_client() as openai_client:
+                        # Create a new conversation for this task
+                        conversation = await openai_client.conversations.create()
+                        print(f"[Conversation] Created conversation (id: {conversation.id})")
+                        # Add user message to conversation
+                        await openai_client.conversations.items.create(
+                            conversation_id=conversation.id,
+                            items=[{
+                                "type": "message",
+                                "role": "user",
+                                "content": user_message
+                            }]
+                        )
+                        # Get response from agent
+                        response = await openai_client.responses.create(
+                            conversation=conversation.id,
+                            extra_body={
+                                "agent": {
+                                    "name": agent.name,
+                                    "type": "agent_reference"
+                                }
+                            },
+                            input=""
+                        )
+                        print(f"[Agent Response] Received response from agent")
+                        return {
+                            "status": "success",
+                            "output": response.output_text,
+                            "conversation_id": conversation.id,
+                            "agent_id": agent.id
+                        }
+        except Exception as e:
+            # Check for 429 Too Many Requests
+            if hasattr(e, 'status_code') and e.status_code == 429:
+                print(f"[Agent Error] 429 Too Many Requests. Attempt {attempt}/{max_retries}. Retrying in {delay} seconds...")
+                await asyncio.sleep(delay)
+                delay *= 2  # Exponential backoff
+                continue
+            # Azure OpenAI/HTTPX error with 429 in message
+            if '429' in str(e) or 'too_many_requests' in str(e):
+                print(f"[Agent Error] 429 Too Many Requests. Attempt {attempt}/{max_retries}. Retrying in {delay} seconds...")
+                await asyncio.sleep(delay)
+                delay *= 2
+                continue
+            print(f"[Agent Error] Failed to invoke agent: {e}")
+            return {"status": "error", "error": str(e)}
+    print(f"[Agent Error] Exceeded max retries for agent: {agent_name}")
+    return {"status": "error", "error": "Too Many Requests: exceeded retry attempts"}
 
 
 
@@ -243,40 +257,56 @@ async def update_market_data():
     print(f"[Market Data] Starting market data update at {datetime.utcnow().isoformat()}")
     
     try:
-        mongo_client = MongoClient(MONGODB_CONNECTION_STRING)
+        # URL encode credentials if needed
+        connection_string = MONGODB_CONNECTION_STRING
+        if "://" in connection_string and "@" in connection_string:
+            protocol, rest = connection_string.split("://", 1)
+            if "@" in rest:
+                creds, host_part = rest.split("@", 1)
+                if ":" in creds:
+                    username, password = creds.split(":", 1)
+                    encoded_creds = f"{quote_plus(username)}:{quote_plus(password)}"
+                    connection_string = f"{protocol}://{encoded_creds}@{host_part}"
+
+        mongo_client = MongoClient(connection_string)
         db = mongo_client[MONGODB_DATABASE]
         market_collection = db[MONGODB_MARKET_COLLECTION]
-        fx = ForeignExchange(key=ALPHA_VANTAGE_API_KEY, output_format='json')
-        
+
         updated_count = 0
         for base, quote in MARKET_CURRENCY_PAIRS:
             pair = f"{base}{quote}"
             try:
-                data, _ = fx.get_currency_exchange_rate(from_currency=base, to_currency=quote)
-                spot = float(data["5. Exchange Rate"])
-                volatility = round(random.uniform(0.07, 0.12), 4)
-                
+                if USE_FAKE_MARKET_DATA:
+                    # Generate fake spot and volatility
+                    spot = round(random.uniform(0.8, 1.3), 4) if quote == "USD" else round(random.uniform(90, 160), 2)
+                    volatility = round(random.uniform(0.07, 0.12), 4)
+                else:
+                    fx = ForeignExchange(key=ALPHA_VANTAGE_API_KEY, output_format='json')
+                    data, _ = fx.get_currency_exchange_rate(from_currency=base, to_currency=quote)
+                    spot = float(data["5. Exchange Rate"])
+                    volatility = round(random.uniform(0.07, 0.12), 4)
+
                 doc = {
                     "currency_pair": pair,
                     "spot": spot,
                     "volatility": volatility,
                     "as_of": datetime.utcnow().isoformat(),
                 }
-                
+
                 market_collection.update_one(
-                    {"currency_pair": pair}, 
-                    {"$set": doc}, 
+                    {"currency_pair": pair},
+                    {"$set": doc},
                     upsert=True
                 )
-                
+
                 print(f"[Market Data] Updated {pair}: spot={spot}, vol={volatility}")
                 updated_count += 1
-                
+
             except Exception as e:
                 print(f"[Market Data] Error updating {pair}: {e}")
-        
+
         print(f"[Market Data] Successfully updated {updated_count}/{len(MARKET_CURRENCY_PAIRS)} currency pairs")
-        
+
     except Exception as e:
         print(f"[Market Data] MongoDB connection failed: {e}")
 

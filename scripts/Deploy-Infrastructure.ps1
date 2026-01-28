@@ -44,9 +44,10 @@ if (-not $ResourceToken) {
     Write-Host "Generated Resource Token: $ResourceToken" -ForegroundColor Cyan
 }
 
-# Generate MongoDB admin password
-$mongoAdminPassword = New-SecurePassword -Length 16
-Write-Host "Generated MongoDB admin password" -ForegroundColor Green
+# Generate MongoDB admin password and escape special characters for CLI
+$mongoAdminPasswordRaw = New-SecurePassword -Length 16
+$mongoAdminPassword = [System.Uri]::EscapeDataString($mongoAdminPasswordRaw)
+Write-Host "Generated MongoDB admin password (escaped): $mongoAdminPassword (Length: $($mongoAdminPasswordRaw.Length))" -ForegroundColor Yellow
 
 # Deploy Bicep template
 $deploymentName = "deployment-$ProjectName-$ResourceToken"
@@ -64,7 +65,7 @@ $deploymentOutput = az deployment sub create `
         location=$Location `
         AIlocation=$AILocation `
         userObjectId=$UserObjectId `
-        mongoAdminPassword="$mongoAdminPassword" `
+        mongoAdminPassword=$mongoAdminPassword `
     --query "properties.outputs"
 
 # Parse and return deployment outputs

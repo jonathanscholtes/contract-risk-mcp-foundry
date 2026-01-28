@@ -101,6 +101,13 @@ New-FederatedIdentityCredential `
     -ResourceGroupName $ResourceGroupName `
     -OidcIssuer $oidcIssuer
 
+New-FederatedIdentityCredential `
+    -ServiceAccountName "risk-worker-sa" `
+    -Namespace "workers" `
+    -ManagedIdentityName $ManagedIdentityName `
+    -ResourceGroupName $ResourceGroupName `
+    -OidcIssuer $oidcIssuer
+
 # 4. Deploy MCP Tools
 Write-Host "`n4. Deploying MCP Tools..." -ForegroundColor Magenta
 helm upgrade --install mcp-tools .\k8s\helm\mcp-tools `
@@ -135,7 +142,10 @@ Write-Host "`n5. Deploying Risk Workers..." -ForegroundColor Magenta
 helm upgrade --install risk-workers .\k8s\helm\risk-workers `
     --namespace workers --create-namespace `
     --set registry=$acrLoginServer `
-    --set image.tag=latest `
+    --set riskWorker.tag=latest `
+    --set azureAiProject.managedIdentityClientId=$ManagedIdentityClientId `
+    --set keyVault.name=$KeyVaultName `
+    --set keyVault.tenantId=$tenantId `
     --set rabbitmq.user=$rabbitmqUsername `
     --set rabbitmq.password=$rabbitmqPassword `
     --wait --timeout 10m

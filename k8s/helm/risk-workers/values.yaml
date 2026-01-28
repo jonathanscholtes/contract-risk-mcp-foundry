@@ -8,6 +8,27 @@ riskWorker:
   replicas: 2
   maxReplicas: 10
 
+# Azure AI Project configuration
+azureAiProject:
+  managedIdentityClientId: ""  # Set via --set azureAiProject.managedIdentityClientId=<client-id>
+
+# Azure Key Vault configuration
+keyVault:
+  name: ""  # Set via --set keyVault.name=<keyvault-name>
+  tenantId: ""  # Set via --set keyVault.tenantId=<tenant-id>
+
+# MCP Contracts MongoDB configuration
+mcpContracts:
+  mongodb:
+    database: "contracts_db"
+    contractsCollection: "contracts"
+
+# MCP Market MongoDB configuration
+mcpMarket:
+  mongodb:
+    database: "market_db"
+    marketCollection: "market_data"
+
 # RabbitMQ connection
 rabbitmq:
   host: rabbitmq.rabbitmq.svc.cluster.local
