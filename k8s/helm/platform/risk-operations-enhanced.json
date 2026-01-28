@@ -205,8 +205,8 @@
           "refId": "A"
         },
         {
-          "expr": "sum(rate(jobs_completed_total[5m])) by (job_type)",
-          "legendFormat": "{{job_type}} completed",
+          "expr": "sum(rate(risk_calculations_total[5m])) by (job_type, status)",
+          "legendFormat": "{{job_type}} {{status}}",
           "refId": "B"
         }
       ],

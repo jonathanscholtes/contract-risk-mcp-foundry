@@ -32,15 +32,6 @@ jobs_submitted_total = Counter(
     'Total number of risk jobs submitted',
     ['job_type']
 )
-jobs_completed_total = Counter(
-    'jobs_completed_total',
-    'Total number of risk jobs completed',
-    ['job_type', 'status']
-)
-pending_jobs = Gauge(
-    'pending_jobs',
-    'Number of pending risk jobs'
-)
 
 # RabbitMQ configuration
 RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "rabbitmq")
@@ -176,7 +167,6 @@ async def run_fx_var(
     
     # Track metrics
     jobs_submitted_total.labels(job_type='fx_var').inc()
-    pending_jobs.inc()
     
     # Publish to RabbitMQ
     await publish_job(job_data)
@@ -236,7 +226,6 @@ async def run_ir_dv01(
     
     # Track metrics
     jobs_submitted_total.labels(job_type='ir_dv01').inc()
-    pending_jobs.inc()
     
     # Publish to RabbitMQ
     await publish_job(job_data)
@@ -336,54 +325,7 @@ async def list_jobs(status: str = "") -> Dict:
     }
 
 
-# Background task to consume results from RabbitMQ
-async def consume_results():
-    """Consume job results from the risk.results queue."""
-    connection = await get_rabbitmq_connection()
-    async with connection:
-        channel = await connection.channel()
-        await channel.set_qos(prefetch_count=10)
-        
-        # Declare exchange and queue
-        exchange = await channel.declare_exchange(
-            "risk.exchange", aio_pika.ExchangeType.DIRECT, durable=True
-        )
-        
-        queue = await channel.declare_queue("risk.results", durable=True)
-        await queue.bind(exchange, routing_key="risk.result")
-        
-        async with queue.iterator() as queue_iter:
-            async for message in queue_iter:
-                async with message.process():
-                    result_data = json.loads(message.body.decode())
-                    job_id = result_data["job_id"]
-                    
-                    # Track completion metrics (use result_data, not job_store)
-                    job_type = result_data.get("job_type", "unknown")
-                    status = result_data["status"]
-                    jobs_completed_total.labels(job_type=job_type, status=status).inc()
-                    pending_jobs.dec()
-                    
-                    # Update job in MongoDB
-                    update_data = {
-                        "status": result_data["status"],
-                        "result": result_data.get("result"),
-                        "error": result_data.get("error"),
-                        "completed_at": datetime.utcnow().isoformat(),
-                    }
-                    
-                    if mongodb_enabled and jobs_collection is not None:
-                        try:
-                            jobs_collection.update_one(
-                                {"job_id": job_id},
-                                {"$set": update_data}
-                            )
-                        except PyMongoError as e:
-                            print(f"Error updating job in MongoDB: {e}")
-                    
-                    # Also update in-memory store if job exists there
-                    if job_id in job_store:
-                        job_store[job_id].update(update_data)
+
 
 
 if __name__ == "__main__":
@@ -393,9 +335,6 @@ if __name__ == "__main__":
     # Start Prometheus metrics server on port 9090
     start_http_server(9090)
     
-    # Start background result consumer
-    loop = asyncio.get_event_loop()
-    loop.create_task(consume_results())
-    
-    # Run the MCP server
+    # Run the MCP server (blocking)
+    # Note: Result consumption and persistence is handled by the risk-worker
     mcp.run(transport="streamable-http")

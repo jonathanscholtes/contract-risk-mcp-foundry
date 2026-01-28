@@ -76,6 +76,46 @@ async def get_rabbitmq_connection():
     )
 
 
+async def log_agent_response(agent_name: str, response: Dict, event_type: str, context: Dict = None) -> None:
+    """
+    Log agent response to MongoDB for audit and action tracking.
+    
+    Args:
+        agent_name: Name of the agent
+        response: Agent response dictionary
+        event_type: Type of event (market_shock, threshold_breach, portfolio_scan)
+        context: Additional context about the event
+    """
+    if not MONGODB_CONNECTION_STRING:
+        print(f"[Agent Log] MongoDB not configured, logging to console only")
+        print(f"[Agent Log] {agent_name} ({event_type}): {response.get('output', 'No output')[:200]}...")
+        return
+    
+    try:
+        client = MongoClient(MONGODB_CONNECTION_STRING)
+        db = client["risk_db"]
+        agent_logs = db["agent_responses"]
+        
+        log_entry = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "agent_name": agent_name,
+            "event_type": event_type,
+            "status": response.get("status"),
+            "response_output": response.get("output"),
+            "conversation_id": response.get("conversation_id"),
+            "agent_id": response.get("agent_id"),
+            "context": context or {}
+        }
+        
+        agent_logs.insert_one(log_entry)
+        print(f"[Agent Log] Response logged for {agent_name} ({event_type})")
+    except Exception as e:
+        print(f"[Agent Log] Error logging agent response: {e}")
+    finally:
+        if client:
+            client.close()
+
+
 async def invoke_foundry_agent(agent_name: str, agent_task: str, context: Dict) -> Dict:
     """
     Invoke a Foundry agent using Azure AI Projects SDK.
@@ -213,36 +253,118 @@ async def detect_market_shock(market_data: Dict):
     """
     Detect significant market movements.
     Invokes agent for portfolio-wide risk reassessment.
+    
+    Compares current market data to previous snapshot to detect:
+    - Large spot price movements (> MARKET_SHOCK_THRESHOLD%)
+    - Volatility spikes (> 15%)
     """
-    # Check for shocks in market data
+    if not MONGODB_CONNECTION_STRING:
+        print("[Market Shock] MongoDB not configured, skipping shock detection")
+        return
+    
     shocks = []
     
-    for pair, data in market_data.items():
-        if pair == "as_of":
-            continue
+    try:
+        # Connect to MongoDB to get historical data
+        connection_string = MONGODB_CONNECTION_STRING
+        if "://" in connection_string and "@" in connection_string:
+            protocol, rest = connection_string.split("://", 1)
+            if "@" in rest:
+                creds, host_part = rest.split("@", 1)
+                if ":" in creds:
+                    username, password = creds.split(":", 1)
+                    encoded_creds = f"{quote_plus(username)}:{quote_plus(password)}"
+                    connection_string = f"{protocol}://{encoded_creds}@{host_part}"
         
-        # Simulate shock detection (in production, compare to previous snapshot)
-        # For now, we'll check if volatility spikes or if spot moves significantly
-        volatility = data.get("volatility", 0)
-        if volatility > 0.15:  # 15% volatility threshold
-            shocks.append({
-                "currency_pair": pair,
-                "volatility": volatility,
-                "type": "volatility_spike"
-            })
+        mongo_client = MongoClient(connection_string)
+        db = mongo_client[MONGODB_DATABASE]
+        
+        # Create/use a collection for historical snapshots
+        history_collection = db["market_data_history"]
+        
+        # Get the last snapshot for comparison
+        last_snapshot = history_collection.find_one(
+            sort=[("timestamp", -1)]  # Most recent
+        )
+        
+        for pair, data in market_data.items():
+            if pair == "as_of":
+                continue
+            
+            current_spot = data.get("spot", 0)
+            current_volatility = data.get("volatility", 0)
+            
+            # Check for volatility spike
+            if current_volatility > 0.15:  # 15% volatility threshold
+                shocks.append({
+                    "currency_pair": pair,
+                    "shock_type": "volatility_spike",
+                    "current_volatility": current_volatility,
+                    "threshold": 0.15,
+                })
+                print(f"[Market Shock] Volatility spike detected in {pair}: {current_volatility:.2%}")
+            
+            # Compare to previous snapshot for spot movement
+            if last_snapshot and pair in last_snapshot.get("data", {}):
+                previous_spot = last_snapshot["data"][pair].get("spot", 0)
+                
+                if previous_spot > 0:
+                    pct_change = abs((current_spot - previous_spot) / previous_spot) * 100
+                    
+                    if pct_change >= MARKET_SHOCK_THRESHOLD:
+                        shocks.append({
+                            "currency_pair": pair,
+                            "shock_type": "spot_movement",
+                            "previous_spot": previous_spot,
+                            "current_spot": current_spot,
+                            "pct_change": round(pct_change, 2),
+                            "threshold": MARKET_SHOCK_THRESHOLD,
+                        })
+                        print(f"[Market Shock] Significant movement in {pair}: {pct_change:.2f}% (was {previous_spot}, now {current_spot})")
+        
+        # Store current snapshot for future comparisons
+        history_collection.insert_one({
+            "timestamp": datetime.utcnow(),
+            "data": {k: v for k, v in market_data.items() if k != "as_of"}
+        })
+        
+        # Keep only last 100 snapshots
+        snapshot_count = history_collection.count_documents({})
+        if snapshot_count > 100:
+            # Delete oldest snapshots
+            oldest = list(history_collection.find(sort=[("timestamp", 1)]).limit(snapshot_count - 100))
+            history_collection.delete_many({"_id": {"$in": [doc["_id"] for doc in oldest]}})
+        
+    except Exception as e:
+        print(f"[Market Shock] Error accessing historical data: {e}")
+        return
     
     if shocks:
-        print(f"[Market Shock] Detected {len(shocks)} market anomalies")
+        print(f"[Market Shock] Detected {len(shocks)} market shocks - invoking MarketShockAnalyst")
         
-        await invoke_foundry_agent(
+        response = await invoke_foundry_agent(
             agent_name=MARKET_SHOCK_AGENT,
-            agent_task="Assess the impact of these market shocks on the portfolio",
+            agent_task="Assess the impact of these market shocks on the portfolio and generate risk memos for affected contracts",
             context={
                 "shocks": shocks,
                 "market_snapshot": market_data,
                 "timestamp": datetime.utcnow().isoformat(),
             }
         )
+        
+        # Log response if successful
+        if response and response.get("status") == "success" and response.get("output"):
+            await log_agent_response(
+                agent_name=MARKET_SHOCK_AGENT,
+                response=response,
+                event_type="market_shock",
+                context={
+                    "num_shocks": len(shocks),
+                    "shock_details": shocks
+                }
+            )
+    else:
+        print("[Market Shock] No significant market movements detected")
 
 
 async def update_market_data():
@@ -306,6 +428,22 @@ async def update_market_data():
                 print(f"[Market Data] Error updating {pair}: {e}")
 
         print(f"[Market Data] Successfully updated {updated_count}/{len(MARKET_CURRENCY_PAIRS)} currency pairs")
+        
+        # After updating market data, check for market shocks
+        if updated_count > 0:
+            # Retrieve current market snapshot to pass to shock detection
+            current_snapshot = {}
+            for doc in market_collection.find():
+                if "currency_pair" in doc:
+                    current_snapshot[doc["currency_pair"]] = {
+                        "spot": doc.get("spot"),
+                        "volatility": doc.get("volatility"),
+                        "as_of": doc.get("as_of"),
+                    }
+            current_snapshot["as_of"] = datetime.utcnow().isoformat()
+            
+            # Detect market shocks and invoke agent if needed
+            await detect_market_shock(current_snapshot)
 
     except Exception as e:
         print(f"[Market Data] MongoDB connection failed: {e}")

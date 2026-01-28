@@ -28,6 +28,10 @@ risk_calculation_duration = Histogram(
     'Duration of risk calculations',
     ['job_type']
 )
+pending_jobs = Gauge(
+    'pending_jobs',
+    'Number of pending risk jobs'
+)
 risk_var_value = Gauge(
     'risk_var_value',
     'Current VaR value for contracts',
@@ -49,18 +53,21 @@ RABBITMQ_PASS = os.getenv("RABBITMQ_PASS", "guest")
 MONGODB_CONNECTION_STRING = os.getenv("MONGODB_CONNECTION_STRING", "")
 MONGODB_CONTRACTS_DB = os.getenv("MONGODB_CONTRACTS_DB", "contracts_db")
 MONGODB_MARKET_DB = os.getenv("MONGODB_MARKET_DB", "market_db")
+MONGODB_RISK_DB = os.getenv("MONGODB_RISK_DB", "risk_db")
 MONGODB_CONTRACTS_COLLECTION = os.getenv("MONGODB_CONTRACTS_COLLECTION", "contracts")
 MONGODB_MARKET_COLLECTION = os.getenv("MONGODB_MARKET_COLLECTION", "market_data")
+MONGODB_JOBS_COLLECTION = os.getenv("MONGODB_JOBS_COLLECTION", "jobs")
 
 # MongoDB clients
 mongo_client: Optional[MongoClient] = None
 contracts_collection = None
 market_collection = None
+jobs_collection = None
 
 
 def init_mongodb():
     """Initialize MongoDB connection."""
-    global mongo_client, contracts_collection, market_collection
+    global mongo_client, contracts_collection, market_collection, jobs_collection
     
     if not MONGODB_CONNECTION_STRING:
         print("WARNING: MONGODB_CONNECTION_STRING not set. Using fallback values.")
@@ -76,6 +83,10 @@ def init_mongodb():
         # Market database
         market_db = mongo_client[MONGODB_MARKET_DB]
         market_collection = market_db[MONGODB_MARKET_COLLECTION]
+        
+        # Risk database
+        risk_db = mongo_client[MONGODB_RISK_DB]
+        jobs_collection = risk_db[MONGODB_JOBS_COLLECTION]
         
         # Test connection
         mongo_client.admin.command('ping')
@@ -181,6 +192,9 @@ async def process_job(job_data: Dict) -> Dict:
     contract_id = job_data["contract_id"]
     params = job_data["params"]
     
+    # Track job as pending
+    pending_jobs.inc()
+    
     print(f"Processing job {job_id} ({job_type}) for contract {contract_id}")
     
     # Track calculation start time
@@ -227,6 +241,7 @@ async def process_job(job_data: Dict) -> Dict:
             raise ValueError(f"Unknown job type: {job_type}")
         
         # Track successful calculation
+        pending_jobs.dec()
         duration = (datetime.utcnow() - start_time).total_seconds()
         risk_calculation_duration.labels(job_type=job_type).observe(duration)
         risk_calculations_total.labels(job_type=job_type, status='success').inc()
@@ -242,6 +257,7 @@ async def process_job(job_data: Dict) -> Dict:
         # Track failed calculation
         duration = (datetime.utcnow() - start_time).total_seconds()
         risk_calculation_duration.labels(job_type=job_type).observe(duration)
+        pending_jobs.dec()
         risk_calculations_total.labels(job_type=job_type, status='failed').inc()
         
         return {
@@ -254,7 +270,7 @@ async def process_job(job_data: Dict) -> Dict:
 
 
 async def publish_result(channel, result_data: Dict) -> None:
-    """Publish a result to the risk.results queue."""
+    """Publish a result to the risk.results queue and update MongoDB."""
     exchange = await channel.get_exchange("risk.exchange")
     
     message = aio_pika.Message(
@@ -264,6 +280,25 @@ async def publish_result(channel, result_data: Dict) -> None:
     
     await exchange.publish(message, routing_key="risk.result")
     print(f"Published result for job {result_data['job_id']}")
+    
+    # Update MongoDB with result
+    job_id = result_data["job_id"]
+    update_data = {
+        "status": result_data["status"],
+        "result": result_data.get("result"),
+        "error": result_data.get("error"),
+        "completed_at": datetime.utcnow().isoformat(),
+    }
+    
+    if jobs_collection is not None:
+        try:
+            jobs_collection.update_one(
+                {"job_id": job_id},
+                {"$set": update_data}
+            )
+            print(f"Updated MongoDB for job {job_id}")
+        except PyMongoError as e:
+            print(f"Error updating job in MongoDB: {e}")
 
 
 async def consume_jobs():
