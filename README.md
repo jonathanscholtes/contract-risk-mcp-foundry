@@ -2,7 +2,9 @@
 > **This project is currently in active development and may contain breaking changes.**  
 > Updates and modifications are being made frequently, which may impact stability or functionality. This notice will be removed once development is complete and the project reaches a stable release.  
 
-# Contract Risk Sentinel
+# From Chatbots to Autonomous Agents: Building an Always-On Risk Platform
+
+📝 **Read the full walkthrough**: [Blog Article](https://your-blog-url.com)
 
 An **autonomous agentic system** demonstrating production-ready AI agent orchestration for continuous financial contract risk monitoring.
 
@@ -29,7 +31,7 @@ This platform demonstrates an **autonomous agentic system** that continuously mo
 
 ## 📐 Architecture
 
-![design](/media/diagram.png)
+![design](/media/diagram2.png)
 ---
 
 
@@ -109,7 +111,15 @@ contract-risk-mcp-foundry/
     -UserObjectId 'YOUR_USER_OBJECT_ID'
 ```
 
-This  deployment will:
+**Parameter Details:**
+- `Subscription`: Your Azure subscription name (required)
+- `Location`: Azure region for resources, default is `eastus2` (optional)
+- `UserObjectId`: (Optional) Your Azure AD user object ID for AKS cluster admin access. Get it via:
+  ```powershell
+  az ad signed-in-user show --query id -o tsv
+  ```
+
+This deployment will:
 - ✅ Deploy Azure infrastructure (AKS, MongoDB, AI Foundry, ACR)
 - ✅ Build and push container images
 - ✅ Deploy MCP tool servers to AKS
@@ -118,6 +128,53 @@ This  deployment will:
 - ✅ Set up monitoring (Prometheus, Grafana, OpenTelemetry)
 
 **📖 For detailed agent deployment documentation, see [AGENTS_DEPLOYMENT.md](AGENTS_DEPLOYMENT.md)**
+
+## 📊 Next Steps
+
+After deployment completes, explore the system:
+
+### 1. Access Grafana Dashboards
+
+```powershell
+# Forward Grafana port
+kubectl port-forward -n platform svc/grafana 3000:3000
+
+# Open in browser: http://localhost:3000
+# Default credentials: admin / admin
+```
+
+Navigate to **"Contract Risk Operations Center - Enhanced"** dashboard to see:
+- Real-time risk metrics and contract VaR values
+- Job submission and completion rates
+- Pending jobs gauge
+- Agent invocation logs
+
+### 2. Check Agent Logs
+
+```powershell
+# View orchestrator logs (event detection and agent invocation)
+kubectl logs -n tools deployment/agent-orchestrator --tail=100 -f
+
+# View specific agent invocation
+kubectl logs -n tools deployment/agent-orchestrator | grep "Agent Invocation"
+
+# Check market shock detections
+kubectl logs -n tools deployment/agent-orchestrator | grep "Market Shock"
+```
+
+### 3. Monitor Job Queue
+
+```powershell
+# Access RabbitMQ management console
+kubectl port-forward -n rabbitmq svc/rabbitmq 15672:15672
+
+# Open in browser: http://localhost:15672
+# Default credentials: guest / guest
+
+# Check queues and messages:
+# - risk.jobs (incoming risk calculation requests)
+# - risk.results (completed calculations)
+```
 
 ---
 <details>
@@ -156,12 +213,6 @@ This  deployment will:
 6. **Grafana** shows real-time metrics and alerts
 
 </details>
-
-<details>
-
-
-
-
 
 ---
 
