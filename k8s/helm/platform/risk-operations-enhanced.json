@@ -113,11 +113,11 @@
       "pluginVersion": "10.2.2",
       "targets": [
         {
-          "expr": "sum(rate(risk_memos_written_total{breach_alert=\"true\"}[5m])) * 300",
+          "expr": "sum(risk_memos_written_total{breach_alert=\"true\"})",
           "refId": "A"
         }
       ],
-      "title": "Breach Alerts (5m)",
+      "title": "Max Breach Alerts",
       "type": "gauge"
     },
     {
@@ -311,7 +311,7 @@
       "pluginVersion": "10.2.2",
       "targets": [
         {
-          "expr": "sum(rate(risk_memos_written_total[5m])) by (breach_alert)",
+          "expr": "sum(risk_memos_written_total) by (breach_alert)",
           "legendFormat": "breach={{breach_alert}}",
           "refId": "A"
         }

@@ -81,5 +81,8 @@ resource firewallRules 'Microsoft.DocumentDB/mongoClusters/firewallRules@2025-09
 output clusterName string = cluster.name
 output clusterId string = cluster.id
 output adminUsername string = adminUsername
-output connectionString string = 'mongodb+srv://${adminUsername}:${adminPassword}@${cluster.name}.mongocluster.cosmos.azure.com/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000'
+// Note: Password is URL-encoded in connection string for special characters
+// Using replace() for common special characters - for production, consider using deployment script for full URL encoding
+var encodedPassword = replace(replace(replace(replace(replace(replace(replace(replace(adminPassword, '@', '%40'), '!', '%21'), '#', '%23'), '$', '%24'), '%', '%25'), '^', '%5E'), '&', '%26'), '*', '%2A')
+output connectionString string = 'mongodb+srv://${adminUsername}:${encodedPassword}@${cluster.name}.mongocluster.cosmos.azure.com/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000'
 output endpoint string = '${cluster.name}.mongocluster.cosmos.azure.com'

@@ -56,9 +56,9 @@ def update_contract_counts():
     """Update Prometheus metrics for contract counts by type."""
     if mongodb_enabled and contracts_collection is not None:
         try:
-            # Count by contract type
-            fx_count = contracts_collection.count_documents({"contract_type": "FX_Forward"})
-            ir_count = contracts_collection.count_documents({"contract_type": "IR_Swap"})
+            # Count by contract type - use actual enum values
+            fx_count = contracts_collection.count_documents({"contract_type": "fx_forward"})
+            ir_count = contracts_collection.count_documents({"contract_type": "interest_rate_swap"})
             
             contracts_in_registry.labels(contract_type='FX').set(fx_count)
             contracts_in_registry.labels(contract_type='IR').set(ir_count)

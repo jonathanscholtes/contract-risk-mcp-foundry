@@ -120,7 +120,7 @@ function New-SecurePassword {
     $lowercase = 'abcdefghijklmnopqrstuvwxyz'
     $uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
     $numbers = '0123456789'
-    $special = '!@#$%^&*'
+    #$special = '!@#$%^&*'
     
     # Ensure password contains at least one from each required category
     # (MongoDB requires 3 out of 4 types)
@@ -128,7 +128,7 @@ function New-SecurePassword {
     $password += $lowercase[(Get-Random -Maximum $lowercase.Length)]
     $password += $uppercase[(Get-Random -Maximum $uppercase.Length)]
     $password += $numbers[(Get-Random -Maximum $numbers.Length)]
-    $password += $special[(Get-Random -Maximum $special.Length)]
+    #$password += $special[(Get-Random -Maximum $special.Length)]
     
     # Fill remaining length with random characters from all sets
     $allChars = $lowercase + $uppercase + $numbers + $special
