@@ -44,12 +44,22 @@ mcpRisk:
   image: mcp-risk
   tag: 0.1.0
   replicas: 2
+  mongodb:
+    database: "risk_db"
+    jobsCollection: "jobs"
 
 # MCP Market
 mcpMarket:
   image: mcp-market
   tag: 0.1.0
   replicas: 2
+  mongodb:
+    database: "market_db"
+    marketCollection: "market_data"
+
+# Alpha Vantage API
+alphaVantage:
+  apiKey: "demo"  # Set via --set alphaVantage.apiKey=<your-api-key>
 
 # RabbitMQ connection
 rabbitmq:

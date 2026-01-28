@@ -38,7 +38,7 @@ This platform demonstrates an **autonomous agentic system** that continuously mo
 **AKS Orchestration Layer** (Event Detection & Scheduling)
 - `agent-orchestrator`: Event-driven agent invocation service
   - Detects events (RabbitMQ messages, market shocks, threshold breaches)
-  - Runs cron-based portfolio scans
+  - Runs cron-based portfolio scans and market data updates
   - Invokes Foundry agents via API
   - Provides controlled autonomy with full observability
 
@@ -92,7 +92,7 @@ contract-risk-mcp-foundry/
 
 
 
-## 🚀 Quick Start
+## 🚀 Deployment
 
 ### Prerequisites
 
@@ -101,7 +101,6 @@ contract-risk-mcp-foundry/
 - `kubectl`, `helm`, Azure CLI
 - Python 3.10+
 
-### Automated Deployment
 
 ```powershell
 .\deploy.ps1 `
@@ -110,7 +109,7 @@ contract-risk-mcp-foundry/
     -UserObjectId 'YOUR_USER_OBJECT_ID'
 ```
 
-This automated deployment will:
+This  deployment will:
 - ✅ Deploy Azure infrastructure (AKS, MongoDB, AI Foundry, ACR)
 - ✅ Build and push container images
 - ✅ Deploy MCP tool servers to AKS
@@ -160,71 +159,7 @@ This automated deployment will:
 
 <details>
 
-<summary>🛠️ MCP Tool Reference</summary>
 
-### contracts.search_contracts
-Search for contracts by type, counterparty, or currency pair.
-
-### contracts.get_contract
-Retrieve details for a specific contract.
-
-### contracts.create_contract
-Create a new contract in the registry.
-
-### contracts.write_risk_memo
-Store a risk assessment memo for a contract.
-
-### contracts.get_risk_memos
-Retrieve all risk memos for a contract.
-
-### risk.run_fx_var
-Submit an FX VaR calculation job (async).
-
-### risk.run_ir_dv01
-Submit an IR DV01 calculation job (async).
-
-### risk.get_risk_result
-Poll for job result by job_id.
-
-### risk.list_jobs
-List all jobs, optionally filtered by status.
-
-### market.get_fx_spot
-Get current FX spot rate for a currency pair.
-
-### market.get_fx_volatility
-Get annualized volatility for a currency pair.
-
-### market.get_market_snapshot
-Get snapshot of all market data.
-
-### market.simulate_shock
-Simulate a market shock scenario.
-
-</details>
-
-<details>
-
-<summary>🔐 Security Considerations</summary>
-
-For production deployments:
-- Store RabbitMQ credentials in Azure Key Vault
-- Use managed identities for ACR access
-- Enable APIM in front of MCP endpoints for auth/quotas
-- Configure network policies for pod-to-pod communication
-</details>
-
-
-<details>
-
-<summary> 📈 Scaling </summary>
-
-The platform autoscales automatically:
-- **KEDA** monitors RabbitMQ queue depth
-- Workers scale from 2 to 10 replicas based on load
-- MCP servers can be manually scaled via Helm values
-
-</details>
 
 
 

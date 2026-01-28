@@ -64,7 +64,7 @@ $deploymentOutput = az deployment sub create `
         location=$Location `
         AIlocation=$AILocation `
         userObjectId=$UserObjectId `
-        mongoAdminPassword=$mongoAdminPassword `
+        mongoAdminPassword="$mongoAdminPassword" `
     --query "properties.outputs"
 
 # Parse and return deployment outputs

@@ -85,12 +85,12 @@ Write-Host @"
 
 "@ -ForegroundColor Cyan
 
-Write-Host "[✓] Azure Infrastructure deployed" -ForegroundColor Green
-Write-Host "[✓] Container images built and pushed to ACR" -ForegroundColor Green
-Write-Host "[✓] Platform components deployed to AKS" -ForegroundColor Green
-Write-Host "[✓] RabbitMQ deployed" -ForegroundColor Green
-Write-Host "[✓] MCP tool servers deployed" -ForegroundColor Green
-Write-Host "[✓] Risk workers deployed with KEDA autoscaling" -ForegroundColor Green
+Write-Host "[OK] Azure Infrastructure deployed" -ForegroundColor Green
+Write-Host "[OK] Container images built and pushed to ACR" -ForegroundColor Green
+Write-Host "[OK] Platform components deployed to AKS" -ForegroundColor Green
+Write-Host "[OK] RabbitMQ deployed" -ForegroundColor Green
+Write-Host "[OK] MCP tool servers deployed" -ForegroundColor Green
+Write-Host "[OK] Risk workers deployed with KEDA autoscaling" -ForegroundColor Green
 
 Write-Host "`n=== Service Endpoints ===" -ForegroundColor Cyan
 

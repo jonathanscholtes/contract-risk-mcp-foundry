@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / "shared"))
 import os
 import json
 import asyncio
+import random
 import aio_pika
 import httpx
 from datetime import datetime, time
@@ -22,6 +23,8 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from azure.identity.aio import DefaultAzureCredential
 from azure.ai.projects.aio import AIProjectClient
+from alpha_vantage.foreignexchange import ForeignExchange
+from pymongo import MongoClient
 
 # Configuration
 RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "rabbitmq")
@@ -41,6 +44,26 @@ THRESHOLD_BREACH_AGENT = os.getenv("THRESHOLD_BREACH_AGENT", "ThresholdBreachAna
 FX_VAR_THRESHOLD = float(os.getenv("FX_VAR_THRESHOLD", "100000"))  # $100k
 IR_DV01_THRESHOLD = float(os.getenv("IR_DV01_THRESHOLD", "50000"))  # $50k
 MARKET_SHOCK_THRESHOLD = float(os.getenv("MARKET_SHOCK_THRESHOLD", "2.0"))  # 2%
+
+# Market data configuration
+MONGODB_CONNECTION_STRING = os.getenv("MONGODB_CONNECTION_STRING", "")
+MONGODB_DATABASE = os.getenv("MONGODB_DATABASE", "market_db")
+MONGODB_MARKET_COLLECTION = os.getenv("MONGODB_MARKET_COLLECTION", "market_data")
+ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY", "demo")
+
+# Currency pairs to monitor
+MARKET_CURRENCY_PAIRS = [
+    ("EUR", "USD"),
+    ("GBP", "USD"),
+    ("USD", "JPY"),
+    ("AUD", "USD"),
+    ("USD", "CAD"),
+    ("USD", "CHF"),
+    ("NZD", "USD"),
+    ("EUR", "GBP"),
+    ("EUR", "JPY"),
+    ("GBP", "JPY"),
+]
 
 
 async def get_rabbitmq_connection():
@@ -208,6 +231,56 @@ async def detect_market_shock(market_data: Dict):
         )
 
 
+async def update_market_data():
+    """
+    Scheduled task: Fetch FX market data and update MongoDB.
+    Runs every 15 minutes to keep market data current.
+    """
+    if not MONGODB_CONNECTION_STRING:
+        print("[Market Data] MongoDB connection string not set, skipping update")
+        return
+    
+    print(f"[Market Data] Starting market data update at {datetime.utcnow().isoformat()}")
+    
+    try:
+        mongo_client = MongoClient(MONGODB_CONNECTION_STRING)
+        db = mongo_client[MONGODB_DATABASE]
+        market_collection = db[MONGODB_MARKET_COLLECTION]
+        fx = ForeignExchange(key=ALPHA_VANTAGE_API_KEY, output_format='json')
+        
+        updated_count = 0
+        for base, quote in MARKET_CURRENCY_PAIRS:
+            pair = f"{base}{quote}"
+            try:
+                data, _ = fx.get_currency_exchange_rate(from_currency=base, to_currency=quote)
+                spot = float(data["5. Exchange Rate"])
+                volatility = round(random.uniform(0.07, 0.12), 4)
+                
+                doc = {
+                    "currency_pair": pair,
+                    "spot": spot,
+                    "volatility": volatility,
+                    "as_of": datetime.utcnow().isoformat(),
+                }
+                
+                market_collection.update_one(
+                    {"currency_pair": pair}, 
+                    {"$set": doc}, 
+                    upsert=True
+                )
+                
+                print(f"[Market Data] Updated {pair}: spot={spot}, vol={volatility}")
+                updated_count += 1
+                
+            except Exception as e:
+                print(f"[Market Data] Error updating {pair}: {e}")
+        
+        print(f"[Market Data] Successfully updated {updated_count}/{len(MARKET_CURRENCY_PAIRS)} currency pairs")
+        
+    except Exception as e:
+        print(f"[Market Data] MongoDB connection failed: {e}")
+
+
 async def run_portfolio_scan():
     """
     Scheduled task: Run comprehensive portfolio risk scan.
@@ -275,9 +348,19 @@ def setup_scheduler():
         replace_existing=True,
     )
     
+    # Market data updates every 15 minutes
+    scheduler.add_job(
+        update_market_data,
+        CronTrigger(minute="*/15"),
+        id="market_data_update",
+        name="Market Data Update",
+        replace_existing=True,
+    )
+    
     print("[Scheduler] Cron jobs configured:")
     print("  - Daily scan: 8:00 AM UTC")
     print("  - Intraday scans: Every 4 hours")
+    print("  - Market data updates: Every 15 minutes")
     
     return scheduler
 
@@ -300,6 +383,14 @@ async def main():
     scheduler = setup_scheduler()
     scheduler.start()
     print("[Scheduler] Started - tasks scheduled")
+    
+    # Run initial market data update on startup
+    print("[Startup] Running initial market data update...")
+    try:
+        await update_market_data()
+        print("[Startup] Initial market data update completed")
+    except Exception as e:
+        print(f"[Startup] Error during market data update: {e}")
     
     # Run an immediate portfolio scan on startup for testing
     print("[Startup] Running initial portfolio scan...")

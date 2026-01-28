@@ -15,6 +15,8 @@ import aio_pika
 import json
 import asyncio
 from prometheus_client import Counter, Gauge, start_http_server
+from pymongo import MongoClient
+from pymongo.errors import PyMongoError
 
 # Initialize FastMCP server
 mcp = FastMCP(
@@ -46,8 +48,48 @@ RABBITMQ_PORT = int(os.getenv("RABBITMQ_PORT", "5672"))
 RABBITMQ_USER = os.getenv("RABBITMQ_USER", "guest")
 RABBITMQ_PASS = os.getenv("RABBITMQ_PASS", "guest")
 
-# In-memory job status store (in production, use a database)
+# MongoDB configuration
+MONGODB_CONNECTION_STRING = os.getenv("MONGODB_CONNECTION_STRING", "")
+MONGODB_DATABASE = os.getenv("MONGODB_DATABASE", "risk_db")
+MONGODB_JOBS_COLLECTION = os.getenv("MONGODB_JOBS_COLLECTION", "jobs")
+
+# Initialize MongoDB client
+mongo_client = None
+jobs_collection = None
+mongodb_enabled = False
+
+# In-memory job status store (fallback if MongoDB is not available)
 job_store: Dict[str, Dict] = {}
+
+
+def init_mongodb():
+    """Initialize MongoDB connection and collection."""
+    global mongo_client, jobs_collection, mongodb_enabled
+    
+    if not MONGODB_CONNECTION_STRING:
+        print("WARNING: MONGODB_CONNECTION_STRING not set. Using in-memory storage.")
+        return False
+    
+    try:
+        mongo_client = MongoClient(MONGODB_CONNECTION_STRING)
+        db = mongo_client[MONGODB_DATABASE]
+        jobs_collection = db[MONGODB_JOBS_COLLECTION]
+        
+        # Create indexes
+        jobs_collection.create_index("job_id", unique=True)
+        jobs_collection.create_index("status")
+        jobs_collection.create_index("submitted_at")
+        
+        # Test connection
+        mongo_client.admin.command('ping')
+        print(f"Successfully connected to MongoDB: {MONGODB_DATABASE}")
+        mongodb_enabled = True
+        return True
+    except PyMongoError as e:
+        print(f"Failed to connect to MongoDB: {e}")
+        print("Falling back to in-memory storage.")
+        mongodb_enabled = False
+        return False
 
 
 async def get_rabbitmq_connection():
@@ -115,11 +157,22 @@ async def run_fx_var(
     }
     
     # Store job status
-    job_store[job_id] = {
+    job_data_with_meta = {
+        "job_id": job_id,
         "status": "pending",
         "submitted_at": datetime.utcnow().isoformat(),
         "job_data": job_data,
     }
+    
+    if mongodb_enabled and jobs_collection is not None:
+        try:
+            jobs_collection.insert_one(job_data_with_meta.copy())
+        except PyMongoError as e:
+            print(f"Error storing job in MongoDB: {e}")
+            # Fallback to in-memory
+            job_store[job_id] = job_data_with_meta
+    else:
+        job_store[job_id] = job_data_with_meta
     
     # Track metrics
     jobs_submitted_total.labels(job_type='fx_var').inc()
@@ -164,11 +217,22 @@ async def run_ir_dv01(
     }
     
     # Store job status
-    job_store[job_id] = {
+    job_data_with_meta = {
+        "job_id": job_id,
         "status": "pending",
         "submitted_at": datetime.utcnow().isoformat(),
         "job_data": job_data,
     }
+    
+    if mongodb_enabled and jobs_collection is not None:
+        try:
+            jobs_collection.insert_one(job_data_with_meta.copy())
+        except PyMongoError as e:
+            print(f"Error storing job in MongoDB: {e}")
+            # Fallback to in-memory
+            job_store[job_id] = job_data_with_meta
+    else:
+        job_store[job_id] = job_data_with_meta
     
     # Track metrics
     jobs_submitted_total.labels(job_type='ir_dv01').inc()
@@ -195,13 +259,24 @@ async def get_risk_result(job_id: str) -> Dict:
     Returns:
         Dictionary with job status and result (if complete)
     """
-    if job_id not in job_store:
+    job_info = None
+    
+    # Try MongoDB first
+    if mongodb_enabled and jobs_collection is not None:
+        try:
+            job_info = jobs_collection.find_one({"job_id": job_id}, {"_id": 0})
+        except PyMongoError as e:
+            print(f"Error retrieving job from MongoDB: {e}")
+    
+    # Fallback to in-memory
+    if job_info is None and job_id in job_store:
+        job_info = job_store[job_id]
+    
+    if job_info is None:
         return {
             "error": f"Job {job_id} not found",
             "status": "unknown",
         }
-    
-    job_info = job_store[job_id]
     
     return {
         "job_id": job_id,
@@ -225,15 +300,35 @@ async def list_jobs(status: str = "") -> Dict:
         Dictionary with list of jobs
     """
     jobs = []
-    for job_id, job_info in job_store.items():
-        if not status or job_info["status"] == status:
-            jobs.append({
-                "job_id": job_id,
-                "status": job_info["status"],
-                "contract_id": job_info["job_data"]["contract_id"],
-                "job_type": job_info["job_data"]["job_type"],
-                "submitted_at": job_info["submitted_at"],
-            })
+    
+    # Try MongoDB first
+    if mongodb_enabled and jobs_collection is not None:
+        try:
+            query = {"status": status} if status else {}
+            cursor = jobs_collection.find(query, {"_id": 0})
+            
+            for job_info in cursor:
+                jobs.append({
+                    "job_id": job_info["job_id"],
+                    "status": job_info["status"],
+                    "contract_id": job_info["job_data"]["contract_id"],
+                    "job_type": job_info["job_data"]["job_type"],
+                    "submitted_at": job_info["submitted_at"],
+                })
+        except PyMongoError as e:
+            print(f"Error listing jobs from MongoDB: {e}")
+    
+    # Fallback to in-memory or append if MongoDB returned nothing
+    if not jobs:
+        for job_id, job_info in job_store.items():
+            if not status or job_info["status"] == status:
+                jobs.append({
+                    "job_id": job_id,
+                    "status": job_info["status"],
+                    "contract_id": job_info["job_data"]["contract_id"],
+                    "job_type": job_info["job_data"]["job_type"],
+                    "submitted_at": job_info["submitted_at"],
+                })
     
     return {
         "jobs": jobs,
@@ -263,20 +358,38 @@ async def consume_results():
                     result_data = json.loads(message.body.decode())
                     job_id = result_data["job_id"]
                     
+                    # Track completion metrics (use result_data, not job_store)
+                    job_type = result_data.get("job_type", "unknown")
+                    status = result_data["status"]
+                    jobs_completed_total.labels(job_type=job_type, status=status).inc()
+                    pending_jobs.dec()
+                    
+                    # Update job in MongoDB
+                    update_data = {
+                        "status": result_data["status"],
+                        "result": result_data.get("result"),
+                        "error": result_data.get("error"),
+                        "completed_at": datetime.utcnow().isoformat(),
+                    }
+                    
+                    if mongodb_enabled and jobs_collection is not None:
+                        try:
+                            jobs_collection.update_one(
+                                {"job_id": job_id},
+                                {"$set": update_data}
+                            )
+                        except PyMongoError as e:
+                            print(f"Error updating job in MongoDB: {e}")
+                    
+                    # Also update in-memory store if job exists there
                     if job_id in job_store:
-                        job_store[job_id]["status"] = result_data["status"]
-                        job_store[job_id]["result"] = result_data.get("result")
-                        job_store[job_id]["error"] = result_data.get("error")
-                        job_store[job_id]["completed_at"] = datetime.utcnow().isoformat()
-                        
-                        # Track completion metrics
-                        job_type = job_store[job_id]["job_data"]["job_type"]
-                        status = result_data["status"]
-                        jobs_completed_total.labels(job_type=job_type, status=status).inc()
-                        pending_jobs.dec()
+                        job_store[job_id].update(update_data)
 
 
 if __name__ == "__main__":
+    # Initialize MongoDB
+    init_mongodb()
+    
     # Start Prometheus metrics server on port 9090
     start_http_server(9090)
     

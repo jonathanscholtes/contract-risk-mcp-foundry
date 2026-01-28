@@ -346,7 +346,7 @@ RULES:
             results["portfolio_scan"] = self.create_portfolio_scan_agent()
             
             print("\n" + "=" * 70)
-            print("✓ All agents deployed successfully!")
+            print("[OK] All agents deployed successfully!")
             print("=" * 70)
             print("\nAgent Summary:")
             for task, agent in results.items():
@@ -370,7 +370,7 @@ RULES:
             return results
             
         except Exception as e:
-            print(f"\n✗ Error deploying agents: {e}")
+            print(f"\n[X] Error deploying agents: {e}")
             import traceback
             traceback.print_exc()
             sys.exit(1)
@@ -384,9 +384,9 @@ RULES:
                     agent_name=agent.name,
                     agent_version=agent.version
                 )
-                print(f"✓ Deleted {agent.name}")
+                print(f"[OK] Deleted {agent.name}")
             except Exception as e:
-                print(f"✗ Error deleting {agent.name}: {e}")
+                print(f"[X] Error deleting {agent.name}: {e}")
 
 
 def main():

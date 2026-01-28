@@ -34,7 +34,7 @@ foreach ($imageName in $Images) {
     
     $config = $imageConfigs[$imageName]
     
-    Write-Host "`nBuilding image '$imageName:latest'..." -ForegroundColor Yellow
+    Write-Host "`nBuilding image '${imageName}:latest'..." -ForegroundColor Yellow
     
     az acr build `
         --resource-group $ResourceGroupName `
@@ -48,7 +48,7 @@ foreach ($imageName in $Images) {
         throw "Image build failed"
     }
     
-    Write-Host "Image '$imageName:latest' built successfully" -ForegroundColor Green
+    Write-Host "Image '${imageName}:latest' built successfully" -ForegroundColor Green
 }
 
 Write-Host "`n[OK] All container images built successfully" -ForegroundColor Green

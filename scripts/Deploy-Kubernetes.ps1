@@ -55,24 +55,24 @@ Write-Host "`n1. Deploying Platform (Monitoring)..." -ForegroundColor Magenta
 helm upgrade --install platform .\k8s\helm\platform `
     --namespace platform --create-namespace `
     --wait --timeout 10m
+if ($LASTEXITCODE -ne 0) { throw "Platform deployment failed" }
+Write-Host "[OK] Platform deployed successfully" -ForegroundColor Green
 
 # 2. Deploy RabbitMQ
 Write-Host "`n2. Deploying RabbitMQ..." -ForegroundColor Magenta
+Write-Host "Adding Bitnami Helm repository..." -ForegroundColor Gray
 helm repo add bitnami https://charts.bitnami.com/bitnami 2>$null
+Write-Host "Updating Helm repositories..." -ForegroundColor Gray
 helm repo update
 
-$success = Invoke-HelmWithRetry -CommandDescription "Deploy RabbitMQ" -Command {
-    helm upgrade --install rabbitmq bitnami/rabbitmq `
-        --namespace rabbitmq --create-namespace `
-        --values .\k8s\helm\rabbitmq-values.yaml `
-        --set auth.username=$rabbitmqUsername `
-        --set auth.password=$rabbitmqPassword `
-        --wait --timeout 10m
-}
-
-if (-not $success) {
-    throw "RabbitMQ deployment failed"
-}
+helm upgrade --install rabbitmq bitnami/rabbitmq `
+    --namespace rabbitmq --create-namespace `
+    --values .\k8s\helm\rabbitmq-values.yaml `
+    --set auth.username=$rabbitmqUsername `
+    --set auth.password=$rabbitmqPassword `
+    --wait --timeout 10m
+if ($LASTEXITCODE -ne 0) { throw "RabbitMQ deployment failed" }
+Write-Host "[OK] RabbitMQ deployed successfully" -ForegroundColor Green
 
 # 3. Configure Workload Identity
 Write-Host "`n3. Configuring Azure Workload Identity..." -ForegroundColor Magenta
@@ -85,6 +85,18 @@ New-FederatedIdentityCredential `
 
 New-FederatedIdentityCredential `
     -ServiceAccountName "mcp-contracts-sa" `
+    -ManagedIdentityName $ManagedIdentityName `
+    -ResourceGroupName $ResourceGroupName `
+    -OidcIssuer $oidcIssuer
+
+New-FederatedIdentityCredential `
+    -ServiceAccountName "mcp-market-sa" `
+    -ManagedIdentityName $ManagedIdentityName `
+    -ResourceGroupName $ResourceGroupName `
+    -OidcIssuer $oidcIssuer
+
+New-FederatedIdentityCredential `
+    -ServiceAccountName "mcp-risk-sa" `
     -ManagedIdentityName $ManagedIdentityName `
     -ResourceGroupName $ResourceGroupName `
     -OidcIssuer $oidcIssuer
@@ -104,7 +116,19 @@ helm upgrade --install mcp-tools .\k8s\helm\mcp-tools `
     --set keyVault.tenantId=$tenantId `
     --set rabbitmq.user=$rabbitmqUsername `
     --set rabbitmq.password=$rabbitmqPassword `
-    --wait --timeout 10m
+    --wait --timeout 15m
+
+if ($LASTEXITCODE -ne 0) { 
+    Write-Host "`n[ERROR] MCP Tools deployment failed. Checking pod status..." -ForegroundColor Red
+    Write-Host "`nPod Status:" -ForegroundColor Yellow
+    kubectl get pods -n tools
+    Write-Host "`nPod Descriptions:" -ForegroundColor Yellow
+    kubectl describe pods -n tools -l app=mcp-market
+    Write-Host "`nPod Logs (last 50 lines):" -ForegroundColor Yellow
+    kubectl logs -n tools -l app=mcp-market --tail=50 --all-containers=true
+    throw "MCP Tools deployment failed - see diagnostics above"
+}
+Write-Host "[OK] MCP Tools deployed successfully" -ForegroundColor Green
 
 # 5. Deploy Risk Workers
 Write-Host "`n5. Deploying Risk Workers..." -ForegroundColor Magenta
@@ -115,6 +139,8 @@ helm upgrade --install risk-workers .\k8s\helm\risk-workers `
     --set rabbitmq.user=$rabbitmqUsername `
     --set rabbitmq.password=$rabbitmqPassword `
     --wait --timeout 10m
+if ($LASTEXITCODE -ne 0) { throw "Risk Workers deployment failed" }
+Write-Host "[OK] Risk Workers deployed successfully" -ForegroundColor Green
 
 # Get service IPs
 Write-Host "`nRetrieving MCP service public IPs..." -ForegroundColor Yellow

@@ -145,11 +145,17 @@
       "pluginVersion": "10.2.2",
       "targets": [
         {
-          "expr": "contracts_in_registry",
+          "expr": "sum(contracts_in_registry{contract_type=\"FX\"})",
+          "legendFormat": "FX Contracts",
           "refId": "A"
+        },
+        {
+          "expr": "sum(contracts_in_registry{contract_type=\"IR\"})",
+          "legendFormat": "IR Contracts",
+          "refId": "B"
         }
       ],
-      "title": "Contracts in Registry",
+      "title": "Contracts in Registry (by Type)",
       "type": "gauge"
     },
     {
@@ -441,11 +447,11 @@
       "pluginVersion": "10.2.2",
       "targets": [
         {
-          "expr": "rabbitmq_queue_messages{queue=\"risk.jobs\"}",
+          "expr": "sum(rabbitmq_queue_messages_ready) + sum(rabbitmq_queue_messages_unacked)",
           "refId": "A"
         }
       ],
-      "title": "Risk Jobs Queue Depth",
+      "title": "RabbitMQ Total Queue Depth",
       "type": "gauge"
     },
     {
@@ -505,7 +511,7 @@
       "pluginVersion": "10.2.2",
       "targets": [
         {
-          "expr": "pending_jobs",
+          "expr": "sum(pending_jobs)",
           "refId": "A"
         }
       ],

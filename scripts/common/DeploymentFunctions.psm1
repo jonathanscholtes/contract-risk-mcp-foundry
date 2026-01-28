@@ -111,9 +111,34 @@ function New-SecurePassword {
     param (
         [int]$Length = 16
     )
+    # Ensure minimum password length of 8
+    if ($Length -lt 8) {
+        $Length = 8
+    }
     
-    $chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*'
-    return -join ((1..$Length) | ForEach-Object { $chars[(Get-Random -Maximum $chars.Length)] })
+    # Define character sets
+    $lowercase = 'abcdefghijklmnopqrstuvwxyz'
+    $uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+    $numbers = '0123456789'
+    $special = '!@#$%^&*'
+    
+    # Ensure password contains at least one from each required category
+    # (MongoDB requires 3 out of 4 types)
+    $password = @()
+    $password += $lowercase[(Get-Random -Maximum $lowercase.Length)]
+    $password += $uppercase[(Get-Random -Maximum $uppercase.Length)]
+    $password += $numbers[(Get-Random -Maximum $numbers.Length)]
+    $password += $special[(Get-Random -Maximum $special.Length)]
+    
+    # Fill remaining length with random characters from all sets
+    $allChars = $lowercase + $uppercase + $numbers + $special
+    for ($i = $password.Count; $i -lt $Length; $i++) {
+        $password += $allChars[(Get-Random -Maximum $allChars.Length)]
+    }
+    
+    # Shuffle the password to avoid predictable pattern
+    $shuffled = $password | Get-Random -Count $password.Count
+    return -join $shuffled
 }
 
 function Invoke-HelmWithRetry {
@@ -127,10 +152,16 @@ function Invoke-HelmWithRetry {
     for ($i = 1; $i -le $MaxRetries; $i++) {
         try {
             Write-Host "Attempt $i of $MaxRetries..." -ForegroundColor Gray
+            
+            # Execute the command directly (no buffering)
             & $Command
+            
             if ($LASTEXITCODE -eq 0) {
+                Write-Host "[OK] $CommandDescription completed successfully" -ForegroundColor Green
                 return $true
             }
+            
+            Write-Host "Command exited with code $LASTEXITCODE" -ForegroundColor Yellow
         }
         catch {
             Write-Host "Error: $_" -ForegroundColor Yellow
@@ -142,7 +173,7 @@ function Invoke-HelmWithRetry {
         }
     }
     
-    Write-Host "Failed after $MaxRetries attempts" -ForegroundColor Red
+    Write-Host "[X] $CommandDescription failed after $MaxRetries attempts" -ForegroundColor Red
     return $false
 }
 

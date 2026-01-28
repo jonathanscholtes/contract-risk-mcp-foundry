@@ -145,11 +145,17 @@
       "pluginVersion": "10.2.2",
       "targets": [
         {
-          "expr": "contracts_in_registry",
+          "expr": "contracts_in_registry{contract_type=\"FX\"}",
+          "legendFormat": "FX Contracts",
           "refId": "A"
+        },
+        {
+          "expr": "contracts_in_registry{contract_type=\"IR\"}",
+          "legendFormat": "IR Contracts",
+          "refId": "B"
         }
       ],
-      "title": "Contracts in Registry",
+      "title": "Contracts in Registry (by Type)",
       "type": "gauge"
     },
     {

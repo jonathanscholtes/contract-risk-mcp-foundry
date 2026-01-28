@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / "shared"))
 from datetime import date, datetime
 from typing import Dict, List, Optional
 import os
+from urllib.parse import quote_plus
 from mcp.server.fastmcp import FastMCP
 from contracts import Contract, ContractType, CurrencyPair
 from prometheus_client import Counter, Gauge, start_http_server
@@ -36,7 +37,8 @@ risk_memos_written_total = Counter(
 )
 contracts_in_registry = Gauge(
     'contracts_in_registry',
-    'Current number of contracts in registry'
+    'Current number of contracts in registry',
+    ['contract_type']
 )
 
 # MongoDB configuration
@@ -49,6 +51,26 @@ MONGODB_MEMOS_COLLECTION = os.getenv("MONGODB_MEMOS_COLLECTION", "risk_memos")
 mongo_client = None
 contracts_collection = None
 memos_collection = None
+
+def update_contract_counts():
+    """Update Prometheus metrics for contract counts by type."""
+    if mongodb_enabled and contracts_collection is not None:
+        try:
+            # Count by contract type
+            fx_count = contracts_collection.count_documents({"contract_type": "FX_Forward"})
+            ir_count = contracts_collection.count_documents({"contract_type": "IR_Swap"})
+            
+            contracts_in_registry.labels(contract_type='FX').set(fx_count)
+            contracts_in_registry.labels(contract_type='IR').set(ir_count)
+        except PyMongoError as e:
+            print(f"Error updating contract counts: {e}")
+    else:
+        # In-memory fallback
+        fx_count = sum(1 for c in contract_store.values() if c.contract_type == ContractType.FX_FORWARD)
+        ir_count = sum(1 for c in contract_store.values() if c.contract_type == ContractType.IRS)
+        
+        contracts_in_registry.labels(contract_type='FX').set(fx_count)
+        contracts_in_registry.labels(contract_type='IR').set(ir_count)
 
 def init_mongodb():
     """Initialize MongoDB connection and collections."""
@@ -86,47 +108,57 @@ memo_store: Dict[str, List[Dict]] = {}  # contract_id -> list of memos
 # Seed some sample contracts
 def seed_contracts():
     """Seed sample contracts for testing."""
-    sample_contracts = [
-        Contract(
-            contract_id="ctr-001",
+    import random
+    from datetime import timedelta
+    sample_contracts = []
+    num_fx = 15
+    num_irs = 10
+    fx_counterparties = ["ABC Bank", "XYZ Corp", "DEF Financial", "GHI Capital", "JKL Partners"]
+    irs_counterparties = ["MNO Bank", "PQR Corp", "STU Financial", "VWX Capital", "YZA Partners"]
+    fx_pairs = list(CurrencyPair)
+    today = date.today()
+    # Generate FX Forwards
+    for i in range(1, num_fx + 1):
+        pair = random.choice(fx_pairs)
+        notional_base = random.uniform(100_000, 10_000_000)
+        strike = round(random.uniform(1.05, 1.30), 4)
+        notional_quote = round(notional_base * strike, 2)
+        trade_date = today - timedelta(days=random.randint(0, 365))
+        maturity_date = trade_date + timedelta(days=random.randint(30, 365))
+        sample_contracts.append(Contract(
+            contract_id=f"ctr-fx-{i:03}",
             contract_type=ContractType.FX_FORWARD,
-            counterparty="ABC Bank",
-            currency_pair=CurrencyPair.EURUSD,
-            notional_base=1000000.0,
-            notional_quote=1085000.0,
-            strike_rate=1.085,
-            trade_date=date(2026, 1, 15),
-            maturity_date=date(2026, 7, 15),
-        ),
-        Contract(
-            contract_id="ctr-002",
-            contract_type=ContractType.FX_FORWARD,
-            counterparty="XYZ Corp",
-            currency_pair=CurrencyPair.GBPUSD,
-            notional_base=500000.0,
-            notional_quote=632500.0,
-            strike_rate=1.265,
-            trade_date=date(2026, 1, 10),
-            maturity_date=date(2026, 6, 10),
-        ),
-        Contract(
-            contract_id="ctr-003",
+            counterparty=random.choice(fx_counterparties),
+            currency_pair=pair,
+            notional_base=notional_base,
+            notional_quote=notional_quote,
+            strike_rate=strike,
+            trade_date=trade_date,
+            maturity_date=maturity_date,
+        ))
+    # Generate IRS
+    for i in range(1, num_irs + 1):
+        notional = random.uniform(1_000_000, 50_000_000)
+        fixed_rate = round(random.uniform(0.01, 0.07), 4)
+        trade_date = today - timedelta(days=random.randint(0, 365))
+        maturity_date = trade_date + timedelta(days=random.randint(365, 365*10))
+        sample_contracts.append(Contract(
+            contract_id=f"ctr-irs-{i:03}",
             contract_type=ContractType.IRS,
-            counterparty="DEF Financial",
-            fixed_rate=0.045,
-            notional=5000000.0,
+            counterparty=random.choice(irs_counterparties),
+            fixed_rate=fixed_rate,
+            notional=notional,
             currency="USD",
-            trade_date=date(2025, 12, 1),
-            maturity_date=date(2030, 12, 1),
-        ),
-    ]
+            trade_date=trade_date,
+            maturity_date=maturity_date,
+        ))
     
     if contracts_collection is not None:
         # Using MongoDB - check if already seeded
         existing_count = contracts_collection.count_documents({})
         if existing_count > 0:
             print(f"Database already contains {existing_count} contracts. Skipping seed.")
-            contracts_in_registry.set(existing_count)
+            update_contract_counts()
             return
         
         # Insert sample contracts into MongoDB
@@ -139,8 +171,7 @@ def seed_contracts():
                 print(f"Contract {contract.contract_id} already exists, skipping.")
         
         # Update registry size metric
-        count = contracts_collection.count_documents({})
-        contracts_in_registry.set(count)
+        update_contract_counts()
         print(f"Successfully seeded {len(sample_contracts)} contracts to MongoDB")
     else:
         # Using in-memory storage
@@ -148,7 +179,7 @@ def seed_contracts():
             contract_store[contract.contract_id] = contract
         
         # Update registry size metric
-        contracts_in_registry.set(len(contract_store))
+        update_contract_counts()
         print(f"Seeded {len(sample_contracts)} contracts to in-memory storage")
 
 
@@ -304,7 +335,7 @@ async def create_contract(
             try:
                 contract_dict = contract.model_dump(mode="json")
                 contracts_collection.insert_one(contract_dict)
-                contracts_in_registry.set(contracts_collection.count_documents({}))
+                update_contract_counts()
                 
                 # Remove _id for response
                 contract_dict.pop("_id", None)
@@ -325,7 +356,7 @@ async def create_contract(
                 }
             
             contract_store[contract_id] = contract
-            contracts_in_registry.set(len(contract_store))
+            update_contract_counts()
             
             return {
                 "message": "Contract created successfully",

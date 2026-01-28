@@ -11,6 +11,33 @@ metadata:
   annotations:
     azure.workload.identity/client-id: {{ .Values.azureAiProject.managedIdentityClientId | quote }}
 ---
+apiVersion: secrets-store.csi.x-k8s.io/v1
+kind: SecretProviderClass
+metadata:
+  name: agent-orchestrator-secrets
+  namespace: tools
+spec:
+  provider: azure
+  parameters:
+    usePodIdentity: "false"
+    useVMManagedIdentity: "false"
+    clientID: {{ .Values.azureAiProject.managedIdentityClientId | quote }}
+    keyvaultName: {{ .Values.keyVault.name | quote }}
+    cloudName: ""
+    objects: |
+      array:
+        - |
+          objectName: mongodb-connection-string
+          objectType: secret
+          objectVersion: ""
+    tenantId: {{ .Values.keyVault.tenantId | quote }}
+  secretObjects:
+  - secretName: mongodb-secrets
+    type: Opaque
+    data:
+    - objectName: mongodb-connection-string
+      key: connection-string
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -59,6 +86,28 @@ spec:
           value: "{{ .Values.thresholds.irDv01Threshold }}"
         - name: MARKET_SHOCK_THRESHOLD
           value: "{{ .Values.thresholds.marketShockThreshold }}"
+        - name: MONGODB_CONNECTION_STRING
+          valueFrom:
+            secretKeyRef:
+              name: mongodb-secrets
+              key: connection-string
+        - name: MONGODB_DATABASE
+          value: {{ .Values.mcpMarket.mongodb.database | quote }}
+        - name: MONGODB_MARKET_COLLECTION
+          value: {{ .Values.mcpMarket.mongodb.marketCollection | quote }}
+        - name: ALPHA_VANTAGE_API_KEY
+          value: {{ .Values.alphaVantage.apiKey | quote }}
+        volumeMounts:
+        - name: secrets-store
+          mountPath: "/mnt/secrets-store"
+          readOnly: true
+      volumes:
+      - name: secrets-store
+        csi:
+          driver: secrets-store.csi.k8s.io
+          readOnly: true
+          volumeAttributes:
+            secretProviderClass: "agent-orchestrator-secrets"
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -161,6 +210,41 @@ spec:
     port: 80
     targetPort: 80
 ---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mcp-risk-sa
+  namespace: tools
+  annotations:
+    azure.workload.identity/client-id: {{ .Values.azureAiProject.managedIdentityClientId | quote }}
+---
+apiVersion: secrets-store.csi.x-k8s.io/v1
+kind: SecretProviderClass
+metadata:
+  name: mcp-risk-secrets
+  namespace: tools
+spec:
+  provider: azure
+  parameters:
+    usePodIdentity: "false"
+    useVMManagedIdentity: "false"
+    clientID: {{ .Values.azureAiProject.managedIdentityClientId | quote }}
+    keyvaultName: {{ .Values.keyVault.name | quote }}
+    cloudName: ""
+    objects: |
+      array:
+        - |
+          objectName: mongodb-connection-string
+          objectType: secret
+          objectVersion: ""
+    tenantId: {{ .Values.keyVault.tenantId | quote }}
+  secretObjects:
+  - secretName: mongodb-secrets
+    type: Opaque
+    data:
+    - objectName: mongodb-connection-string
+      key: connection-string
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -175,10 +259,12 @@ spec:
     metadata:
       labels:
         app: mcp-risk
+        azure.workload.identity/use: "true"
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/port: "9090"
     spec:
+      serviceAccountName: mcp-risk-sa
       containers:
       - name: mcp-risk
         image: {{ .Values.registry }}/{{ .Values.mcpRisk.image }}:{{ .Values.mcpRisk.tag }}
@@ -196,6 +282,26 @@ spec:
           value: {{ .Values.rabbitmq.user }}
         - name: RABBITMQ_PASS
           value: {{ .Values.rabbitmq.password }}
+        - name: MONGODB_CONNECTION_STRING
+          valueFrom:
+            secretKeyRef:
+              name: mongodb-secrets
+              key: connection-string
+        - name: MONGODB_DATABASE
+          value: {{ .Values.mcpRisk.mongodb.database | quote }}
+        - name: MONGODB_JOBS_COLLECTION
+          value: {{ .Values.mcpRisk.mongodb.jobsCollection | quote }}
+        volumeMounts:
+        - name: secrets-store
+          mountPath: "/mnt/secrets-store"
+          readOnly: true
+      volumes:
+      - name: secrets-store
+        csi:
+          driver: secrets-store.csi.k8s.io
+          readOnly: true
+          volumeAttributes:
+            secretProviderClass: "mcp-risk-secrets"
 ---
 apiVersion: v1
 kind: Service
@@ -213,6 +319,41 @@ spec:
     port: 80
     targetPort: 8000
 ---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mcp-market-sa
+  namespace: tools
+  annotations:
+    azure.workload.identity/client-id: {{ .Values.azureAiProject.managedIdentityClientId | quote }}
+---
+apiVersion: secrets-store.csi.x-k8s.io/v1
+kind: SecretProviderClass
+metadata:
+  name: mcp-market-secrets
+  namespace: tools
+spec:
+  provider: azure
+  parameters:
+    usePodIdentity: "false"
+    useVMManagedIdentity: "false"
+    clientID: {{ .Values.azureAiProject.managedIdentityClientId | quote }}
+    keyvaultName: {{ .Values.keyVault.name | quote }}
+    cloudName: ""
+    objects: |
+      array:
+        - |
+          objectName: mongodb-connection-string
+          objectType: secret
+          objectVersion: ""
+    tenantId: {{ .Values.keyVault.tenantId | quote }}
+  secretObjects:
+  - secretName: mongodb-secrets
+    type: Opaque
+    data:
+    - objectName: mongodb-connection-string
+      key: connection-string
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -227,10 +368,12 @@ spec:
     metadata:
       labels:
         app: mcp-market
+        azure.workload.identity/use: "true"
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/port: "9090"
     spec:
+      serviceAccountName: mcp-market-sa
       containers:
       - name: mcp-market
         image: {{ .Values.registry }}/{{ .Values.mcpMarket.image }}:{{ .Values.mcpMarket.tag }}
@@ -240,6 +383,26 @@ spec:
         env:
         - name: PORT
           value: "8000"
+        - name: MONGODB_CONNECTION_STRING
+          valueFrom:
+            secretKeyRef:
+              name: mongodb-secrets
+              key: connection-string
+        - name: MONGODB_DATABASE
+          value: {{ .Values.mcpMarket.mongodb.database | quote }}
+        - name: MONGODB_MARKET_COLLECTION
+          value: {{ .Values.mcpMarket.mongodb.marketCollection | quote }}
+        volumeMounts:
+        - name: secrets-store
+          mountPath: "/mnt/secrets-store"
+          readOnly: true
+      volumes:
+      - name: secrets-store
+        csi:
+          driver: secrets-store.csi.k8s.io
+          readOnly: true
+          volumeAttributes:
+            secretProviderClass: "mcp-market-secrets"
 ---
 apiVersion: v1
 kind: Service

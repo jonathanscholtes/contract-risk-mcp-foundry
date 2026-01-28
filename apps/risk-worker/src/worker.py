@@ -160,6 +160,7 @@ async def process_job(job_data: Dict) -> Dict:
         
         return {
             "job_id": job_id,
+            "job_type": job_type,
             "status": "succeeded",
             "contract_id": contract_id,
             "result": result,
@@ -172,6 +173,7 @@ async def process_job(job_data: Dict) -> Dict:
         
         return {
             "job_id": job_id,
+            "job_type": job_type,
             "status": "failed",
             "contract_id": contract_id,
             "error": str(e),

@@ -29,7 +29,7 @@ Continuously monitor a portfolio of contracts for **FX + Interest Rate risk** an
 **AKS (Orchestration & Compute Plane)**
 - `agent-orchestrator`: Event-driven agent invocation service
   - Detects events (RabbitMQ messages, market shocks, threshold breaches)
-  - Runs cron-based portfolio scans
+  - Runs cron-based portfolio scans and market data updates
   - Invokes Foundry agents via API
   - Provides controlled autonomy with observability and governance
 - `mcp-contracts`: contract registry + term sheets + memos
