@@ -1,10 +1,6 @@
-> ⚠️  
-> **This project is currently in active development and may contain breaking changes.**  
-> Updates and modifications are being made frequently, which may impact stability or functionality. This notice will be removed once development is complete and the project reaches a stable release.  
-
 # From Chatbots to Autonomous Agents: Building an Always-On Risk Platform
 
-📝 **Read the full walkthrough**: [Blog Article](https://your-blog-url.com)
+📝 **Read the full walkthrough**: [Blog Article](https://stochasticcoder.com/2026/01/29/from-chatbots-to-autonomous-agents-building-an-always-on-risk-platform/)
 
 An **autonomous agentic system** demonstrating production-ready AI agent orchestration for continuous financial contract risk monitoring.
 
@@ -45,10 +41,10 @@ This platform demonstrates an **autonomous agentic system** that continuously mo
   - Provides controlled autonomy with full observability
 
 **Foundry Agents** (Hosted in Microsoft Foundry)
-- Invoked by AKS on-demand
-- Coordinate risk analysis workflows
-- Generate narratives and recommendations
-- Call MCP tools for data and computation
+- **ThresholdBreachAnalyst**: Triggered when risk metrics exceed thresholds (FX VaR > $100k or IR DV01 > $50k). Analyzes breach severity, generates hedge recommendations, and persists risk memos.
+- **MarketShockAnalyst**: Triggered on significant market movements (e.g., EURUSD drops 2.5%). Identifies exposed contracts, recalculates portfolio risk, and aggregates impact analysis.
+- **PortfolioScanAnalyst**: Runs on schedule (daily 8 AM UTC, every 4 hours intraday). Performs comprehensive portfolio scans, generates executive summaries, and identifies top-risk contracts.
+- All agents coordinate workflows via MCP tools and are fully auditable
 
 **MCP Tool Servers** (Data & Job Submission Layer)
 - `mcp-contracts`: Contract registry and risk memo storage
@@ -89,19 +85,36 @@ contract-risk-mcp-foundry/
 │   ├── prometheus/            # Prometheus config
 │   └── otel/                  # OpenTelemetry config
 ├── scripts/                   # Deployment and testing scripts
-└── infra/                     # Bicep infrastructure (optional)
+└── infra/                     # Bicep infrastructure
 ```
 
 
 
 ## 🚀 Deployment
 
-### Prerequisites
-
-- Azure subscription with AI Foundry access
-- Azure Container Registry (ACR)
-- `kubectl`, `helm`, Azure CLI
+### **Prerequisites**
+Ensure you have the following before deploying the solution:
+- ✅ **Azure Subscription:** Active subscription with sufficient privileges to create and manage resources.  
+- ✅ **Azure CLI:** Install the [Azure CLI](https://learn.microsoft.com/en-us/cli/azure/get-started-with-azure-cli) for managing Azure resources.  
+- ✅ **IDE with Bicep & PowerShell Support:** Use [VS Code](https://code.visualstudio.com/download) with the **Bicep extension** for development and validation.  
+- ✅ `kubectl`, `helm`
 - Python 3.10+
+
+---
+
+### **1. Clone the Repository**
+Clone the project repository to your local machine:
+
+```bash
+git clone https://github.com/jonathanscholtes/contract-risk-mcp-foundry
+cd contract-risk-mcp-foundry
+
+```
+
+
+### 2. Deploy the Solution  
+
+Use the following PowerShell command to deploy the solution. Be sure to replace the placeholders with your actual subscription name and Azure region.
 
 
 ```powershell
@@ -123,58 +136,72 @@ This deployment will:
 - ✅ Deploy Azure infrastructure (AKS, MongoDB, AI Foundry, ACR)
 - ✅ Build and push container images
 - ✅ Deploy MCP tool servers to AKS
-- ✅ Deploy autonomous agents to Microsoft Foundry
-- ✅ Configure RabbitMQ and workers
-- ✅ Set up monitoring (Prometheus, Grafana, OpenTelemetry)
+- ✅ Deploy three autonomous agents to Microsoft Foundry (ThresholdBreachAnalyst, MarketShockAnalyst, PortfolioScanAnalyst)
+- ✅ Configure RabbitMQ, risk workers, and auto-scaling (KEDA)
+- ✅ Set up monitoring stack (Prometheus, Grafana, OpenTelemetry)
+- ✅ Output service endpoints (Grafana, MCP servers, etc.)
 
-**📖 For detailed agent deployment documentation, see [AGENTS_DEPLOYMENT.md](AGENTS_DEPLOYMENT.md)**
+
 
 ## 📊 Next Steps
 
-After deployment completes, explore the system:
+After deployment completes, the script displays service endpoints:
+
+```
+=== Service Endpoints ===
+Grafana: http://<grafana-endpoint>
+MCP Contracts: http://<mcp-contracts-endpoint>
+MCP Risk: http://<mcp-risk-endpoint>
+MCP Market: http://<mcp-market-endpoint>
+```
 
 ### 1. Access Grafana Dashboards
 
-```powershell
-# Forward Grafana port
-kubectl port-forward -n platform svc/grafana 3000:3000
+Navigate directly to the Grafana endpoint from the deployment output:
 
-# Open in browser: http://localhost:3000
-# Default credentials: admin / admin
+```
+http://<grafana-endpoint>
 ```
 
-Navigate to **"Contract Risk Operations Center - Enhanced"** dashboard to see:
+**Default credentials:** `admin` / `admin`
+
+The **Contract Risk Operations Center - Enhanced** dashboard is pre-deployed and shows:
 - Real-time risk metrics and contract VaR values
 - Job submission and completion rates
 - Pending jobs gauge
 - Agent invocation logs
 
-### 2. Check Agent Logs
+### 2. Monitor Agent Execution
+
+Agent logs are available in Azure AI Foundry:
+1. Go to [Azure AI Foundry](https://ai.azure.com/)
+2. Select your project
+3. Navigate to **Agents** section
+4. Click each agent (ThresholdBreachAnalyst, MarketShockAnalyst, PortfolioScanAnalyst) to view execution history and logs
+
+Alternatively, check orchestrator logs:
 
 ```powershell
 # View orchestrator logs (event detection and agent invocation)
 kubectl logs -n tools deployment/agent-orchestrator --tail=100 -f
-
-# View specific agent invocation
-kubectl logs -n tools deployment/agent-orchestrator | grep "Agent Invocation"
-
-# Check market shock detections
-kubectl logs -n tools deployment/agent-orchestrator | grep "Market Shock"
 ```
 
 ### 3. Monitor Job Queue
 
+RabbitMQ manages risk calculation jobs:
+
 ```powershell
 # Access RabbitMQ management console
-kubectl port-forward -n rabbitmq svc/rabbitmq 15672:15672
+kubectl port-forward -n rabbitmq svc/rabbitmq 15672:15672 &
 
 # Open in browser: http://localhost:15672
 # Default credentials: guest / guest
-
-# Check queues and messages:
-# - risk.jobs (incoming risk calculation requests)
-# - risk.results (completed calculations)
 ```
+
+Check queues:
+- `risk.jobs` - Incoming risk calculation requests
+- `risk.results` - Completed calculations
+- `risk.jobs.dlq` - Dead-letter queue for failed jobs
 
 ---
 <details>
