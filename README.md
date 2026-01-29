@@ -63,6 +63,43 @@ This platform demonstrates an **autonomous agentic system** that continuously mo
 - `Grafana`: Risk operations dashboards
 - `OpenTelemetry`: Distributed tracing
 
+### 📋 Event-Driven Workflow
+
+<details>
+<summary>How the system executes end-to-end</summary>
+
+**Event-Driven Agent Invocation:**
+
+1. **AKS orchestrator** detects event:
+   - Cron schedule triggers daily portfolio scan
+   - Risk result exceeds threshold
+   - Market shock detected
+   - New contract added
+
+2. **Orchestrator invokes Foundry agent** via API with context:
+   - Event details and parameters
+   - MCP endpoint URLs for tool access
+
+3. **Foundry agent** executes workflow:
+   - Calls `contracts.search_contracts()` to get portfolio
+   - Calls `risk.run_fx_var()` for each contract → returns `job_id`
+   - Polls `risk.get_risk_result(job_id)` until complete
+   - Analyzes results and generates recommendations
+   - Calls `contracts.write_risk_memo()` to persist analysis
+
+4. **Risk workers** process async jobs:
+   - Consume from RabbitMQ
+   - Compute VaR/DV01
+   - Publish results back to queue
+
+5. **Orchestrator** monitors results:
+   - Detects threshold breaches
+   - Triggers follow-up agent invocations if needed
+
+6. **Grafana** shows real-time metrics and alerts
+
+</details>
+
 ## 📁 Project Structure
 
 ```
@@ -178,70 +215,6 @@ Agent logs are available in Azure AI Foundry:
 2. Select your project
 3. Navigate to **Agents** section
 4. Click each agent (ThresholdBreachAnalyst, MarketShockAnalyst, PortfolioScanAnalyst) to view execution history and logs
-
-Alternatively, check orchestrator logs:
-
-```powershell
-# View orchestrator logs (event detection and agent invocation)
-kubectl logs -n tools deployment/agent-orchestrator --tail=100 -f
-```
-
-### 3. Monitor Job Queue
-
-RabbitMQ manages risk calculation jobs:
-
-```powershell
-# Access RabbitMQ management console
-kubectl port-forward -n rabbitmq svc/rabbitmq 15672:15672 &
-
-# Open in browser: http://localhost:15672
-# Default credentials: guest / guest
-```
-
-Check queues:
-- `risk.jobs` - Incoming risk calculation requests
-- `risk.results` - Completed calculations
-- `risk.jobs.dlq` - Dead-letter queue for failed jobs
-
----
-<details>
-
-<summary>Workflow</summary>
-
-
-**Event-Driven Agent Invocation:**
-
-1. **AKS orchestrator** detects event:
-   - Cron schedule triggers daily portfolio scan
-   - Risk result exceeds threshold
-   - Market shock detected
-   - New contract added
-
-2. **Orchestrator invokes Foundry agent** via API with context:
-   - Event details and parameters
-   - MCP endpoint URLs for tool access
-
-3. **Foundry agent** executes workflow:
-   - Calls `contracts.search_contracts()` to get portfolio
-   - Calls `risk.run_fx_var()` for each contract → returns `job_id`
-   - Polls `risk.get_risk_result(job_id)` until complete
-   - Analyzes results and generates recommendations
-   - Calls `contracts.write_risk_memo()` to persist analysis
-
-4. **Risk workers** process async jobs:
-   - Consume from RabbitMQ
-   - Compute VaR/DV01
-   - Publish results back to queue
-
-5. **Orchestrator** monitors results:
-   - Detects threshold breaches
-   - Triggers follow-up agent invocations if needed
-
-6. **Grafana** shows real-time metrics and alerts
-
-</details>
-
----
 
 ## ♻️ **Clean-Up**
 
