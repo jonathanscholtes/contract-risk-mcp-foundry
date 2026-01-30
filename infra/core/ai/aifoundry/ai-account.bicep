@@ -13,6 +13,9 @@ param storageAccountResourceId string
 @description('the Application Insights instance used for monitoring')
 param appInsightsName string
 
+@description('Azure AD Object ID of the deploying user for agent creation')
+param userObjectId string = ''
+
 // Extract the storage account name from the resource ID
 var storageAccountName = last(split(storageAccountResourceId, '/'))
 
@@ -177,7 +180,27 @@ resource rolePM 'Microsoft.Authorization/roleAssignments@2020-04-01-preview' = {
   scope:account
 }
 
+// Grant deploying user AI Project Management role for agent creation
+resource roleUserProjectManagement 'Microsoft.Authorization/roleAssignments@2020-04-01-preview' = if (!empty(userObjectId)) {
+  name: guid(account.id, userObjectId, 'user-ai-project-management')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'eadc314b-1a2d-4efa-be10-5d325db5065e') // AI Project Management role ID
+    principalId: userObjectId
+    principalType: 'User'
+  }
+  scope: account
+}
 
+// Grant deploying user AI User role for agent creation
+resource roleUserAIUsers 'Microsoft.Authorization/roleAssignments@2020-04-01-preview' = if (!empty(userObjectId)) {
+  name: guid(account.id, userObjectId, 'user-ai-user-role')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '53ca6127-db72-4b80-b1b0-d745d6d5456d') // AI User role ID
+    principalId: userObjectId
+    principalType: 'User'
+  }
+  scope: account
+}
 
 output aiAccountID string = account.id
 output aiAccountTarget string = account.properties.endpoint

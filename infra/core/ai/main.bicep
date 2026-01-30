@@ -23,6 +23,9 @@ param storageAccountId string
 @description('Name of the Azure Cognitive Search service instance')
 param searchServicename string
 
+@description('Azure AD Object ID of the deploying user for agent creation')
+param userObjectId string = ''
+
 
 
 
@@ -36,6 +39,7 @@ module aifoundry 'aifoundry/main.bicep' = {
     resourceToken: resourceToken
     appInsightsName:appInsightsName
     storageAccountId:storageAccountId
+    userObjectId: userObjectId
 
   }
 

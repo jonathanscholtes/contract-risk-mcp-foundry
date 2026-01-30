@@ -122,7 +122,8 @@ module ai 'core/ai/main.bicep' = {
     appInsightsName: monitor.outputs.applicationInsightsName
     identityName:managedIdentityModule.outputs.managedIdentityName
     storageAccountId:data.outputs.storageAccountId
-  searchServicename: 'srch-${projectName}-${environmentName}-${resourceToken}'
+    searchServicename: 'srch-${projectName}-${environmentName}-${resourceToken}'
+    userObjectId: userObjectId
   }
 }
 

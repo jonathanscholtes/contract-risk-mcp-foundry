@@ -23,6 +23,9 @@ param appInsightsName string
 @description('Resource ID of the Azure Storage Account used by the solution')
 param storageAccountId string
 
+@description('Azure AD Object ID of the deploying user for agent creation')
+param userObjectId string = ''
+
 
 
 module aiaccount 'ai-account.bicep' = {
@@ -34,6 +37,7 @@ module aiaccount 'ai-account.bicep' = {
     customSubdomain: 'fnd-${projectName}-${environmentName}-${resourceToken}'
     storageAccountResourceId:storageAccountId
     appInsightsName:appInsightsName
+    userObjectId: userObjectId
   
     
   }
