@@ -121,16 +121,34 @@ async def run_fx_var(
     simulations: int = 20000,
 ) -> Dict[str, str]:
     """
-    Submit an FX VaR calculation job.
+    Submit an FX Value-at-Risk (VaR) calculation job. USE ONLY FOR FX CONTRACTS.
+    
+    This tool calculates the maximum potential loss in an FX position under normal market conditions.
+    
+    Use this tool ONLY for:
+    - FX forward contracts (contract_type='fx_forward')
+    - Currency exposure analysis
+    
+    DO NOT use for:
+    - Interest Rate Swap (IRS) contracts → use run_ir_dv01() instead
+    - Other derivative types
     
     Args:
-        contract_id: Contract identifier
-        horizon_days: Risk horizon in days (default: 1)
-        confidence: Confidence level (default: 0.99)
-        simulations: Number of Monte Carlo simulations (default: 20000)
+        contract_id: FX contract identifier (must be FX forward contract type)
+        horizon_days: Risk calculation horizon (1=overnight, 10=10 days). Default: 1
+        confidence: Confidence level (0.99=99%, 0.95=95%). Default: 0.99
+        simulations: Monte Carlo simulation count. Default: 20000 (higher=more accurate but slower)
     
     Returns:
-        Dictionary with job_id and status
+        Dictionary with:
+        - job_id: Unique identifier to track calculation (use with get_risk_result)
+        - status: 'pending' (job queued for processing)
+        - message: 'Job submitted successfully'
+    
+    Workflow:
+        1. Submit job: job_result = run_fx_var(contract_id='ctr-fx-001')
+        2. Poll result: get_risk_result(job_id=job_result['job_id']) until status != 'pending'
+        3. Use VaR value in your analysis
     """
     job_id = f"job-{uuid.uuid4().hex[:12]}"
     idempotency_key = f"{contract_id}|fx_var|{datetime.utcnow().date()}"
@@ -184,14 +202,36 @@ async def run_ir_dv01(
     shift_bps: float = 1.0,
 ) -> Dict[str, str]:
     """
-    Submit an IR DV01 calculation job.
+    Submit an Interest Rate DV01 (Dollar Value of 1 basis point) calculation job. USE ONLY FOR IRS CONTRACTS.
+    
+    This tool calculates the price sensitivity of an interest rate swap to 1bp (0.01%) rate movement.
+    
+    Use this tool ONLY for:
+    - Interest Rate Swap (IRS) contracts (contract_type='interest_rate_swap')
+    - IR curve exposure analysis
+    
+    DO NOT use for:
+    - FX forward contracts → use run_fx_var() instead
+    - Other derivative types
     
     Args:
-        contract_id: Contract identifier
-        shift_bps: Rate shift in basis points (default: 1.0)
+        contract_id: IRS contract identifier (must be interest_rate_swap contract type)
+        shift_bps: Interest rate shift for sensitivity in basis points (default: 1.0 bps = 0.01%)
     
     Returns:
-        Dictionary with job_id and status
+        Dictionary with:
+        - job_id: Unique identifier to track calculation (use with get_risk_result)
+        - status: 'pending' (job queued for processing)
+        - message: 'Job submitted successfully'
+    
+    Workflow:
+        1. Submit job: job_result = run_ir_dv01(contract_id='ctr-irs-001')
+        2. Poll result: get_risk_result(job_id=job_result['job_id']) until status != 'pending'
+        3. Use DV01 value to assess rate sensitivity
+    
+    Interpretation:
+        - DV01 = $X means position loses/gains $X if rates move 1bp
+        - Higher DV01 = more rate sensitive (more hedge needed)
     """
     job_id = f"job-{uuid.uuid4().hex[:12]}"
     idempotency_key = f"{contract_id}|ir_dv01|{datetime.utcnow().date()}"
@@ -240,13 +280,36 @@ async def run_ir_dv01(
 @mcp.tool()
 async def get_risk_result(job_id: str) -> Dict:
     """
-    Get the result of a risk calculation job.
+    Poll for the result of a submitted risk calculation job.
+    
+    Use this tool to:
+    - Check if a risk calculation (run_fx_var or run_ir_dv01) has completed
+    - Retrieve the computed risk metrics (VaR or DV01 value)
+    - Detect failures and get error messages
     
     Args:
-        job_id: Job identifier
+        job_id: Job identifier returned from run_fx_var() or run_ir_dv01()
     
     Returns:
-        Dictionary with job status and result (if complete)
+        Dictionary with:
+        - status: 'pending' (still calculating), 'succeeded' (result ready), 'failed' (error)
+        - result: Risk metrics (VaR or DV01 dict) if status='succeeded'
+        - error: Error message if status='failed'
+        - completed_at: Timestamp when calculation finished (if complete)
+    
+    Polling Pattern:
+        1. Submit job: result = run_fx_var(contract_id)
+        2. Poll loop: 
+           while True:
+             status = get_risk_result(result['job_id'])
+             if status['status'] in ['succeeded', 'failed']:
+               break
+             sleep(2)
+        3. Check result['status'] - use result if succeeded, handle error if failed
+    
+    Notes:
+        - Use exponential backoff or wait 2-5s between polls
+        - Timeout after 5+ minutes of 'pending' status (job may have failed)
     """
     job_info = None
     
@@ -280,13 +343,30 @@ async def get_risk_result(job_id: str) -> Dict:
 @mcp.tool()
 async def list_jobs(status: str = "") -> Dict:
     """
-    List all jobs, optionally filtered by status. Use empty string for no filter.
+    List all risk calculation jobs, optionally filtered by status.
+    
+    Use this tool to:
+    - Monitor portfolio risk calculation progress
+    - Identify failed jobs that need troubleshooting
+    - Get overview of pending/completed calculations
     
     Args:
-        status: Optional status filter (pending, processing, succeeded, failed). Empty string for all jobs.
+        status: Filter by job status. Options:
+               - '' (empty string): All jobs
+               - 'pending': Jobs waiting to be processed
+               - 'processing': Jobs currently running
+               - 'succeeded': Completed successfully
+               - 'failed': Jobs that encountered errors
     
     Returns:
-        Dictionary with list of jobs
+        Dictionary with:
+        - jobs: List of job summaries with job_id, status, contract_id, job_type, submitted_at
+        - count: Total number of jobs matching filter
+    
+    Examples:
+        - list_jobs(status='') → all jobs
+        - list_jobs(status='failed') → only failed jobs (check for errors)
+        - list_jobs(status='pending') → jobs still processing
     """
     jobs = []
     

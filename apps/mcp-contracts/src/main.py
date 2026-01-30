@@ -195,15 +195,27 @@ async def search_contracts(
     currency_pair: str = "",
 ) -> Dict:
     """
-    Search for contracts by various criteria. Use empty string to skip a filter.
+    Search for contracts by type, counterparty, or currency pair. Empty strings skip filters.
+    
+    Use this tool to:
+    - Find all contracts of a specific type (e.g., 'interest_rate_swap', 'fx_forward')
+    - Identify contracts exposed to specific currency pairs
+    - Find contracts with specific counterparties
     
     Args:
-        contract_type: Filter by contract type (fx_forward, irs, etc.). Empty string for no filter.
-        counterparty: Filter by counterparty name (case-insensitive partial match). Empty string for no filter.
-        currency_pair: Filter by currency pair. Empty string for no filter.
+        contract_type: Filter by contract type. Options: 'interest_rate_swap' (IRS), 'fx_forward' (FX forward)
+        counterparty: Filter by counterparty name (case-insensitive, partial match OK)
+        currency_pair: Filter by currency pair (e.g., 'EURUSD', 'GBPJPY'). Only applies to FX contracts.
     
     Returns:
-        Dictionary with list of matching contracts
+        Dictionary with:
+        - contracts: list of matching contract objects with contract_type, notional, maturity, etc.
+        - count: number of results
+    
+    Examples:
+        - Find all IRS contracts: search_contracts(contract_type='interest_rate_swap')
+        - Find all EURUSD FX exposures: search_contracts(currency_pair='EURUSD')
+        - Find contracts with 'Bank' in counterparty: search_contracts(counterparty='Bank')
     """
     results = []
     
@@ -247,13 +259,25 @@ async def search_contracts(
 @mcp.tool()
 async def get_contract(contract_id: str) -> Dict:
     """
-    Get a specific contract by ID.
+    Retrieve full details for a specific contract by ID.
+    
+    Use this tool to:
+    - Get contract type before deciding which risk calculation to use
+    - Retrieve contract terms (notional, rates, maturity, etc.)
+    - Check contract status and historical information
     
     Args:
-        contract_id: Contract identifier
+        contract_id: Contract identifier (e.g., 'ctr-fx-001', 'ctr-irs-002')
     
     Returns:
-        Contract details or error
+        Contract object with:
+        - contract_type: Either 'interest_rate_swap' (use run_ir_dv01()) or 'fx_forward' (use run_fx_var())
+        - notional/notional_base: Position size
+        - maturity_date: When contract expires
+        - counterparty: Trading counterparty
+        - fixed_rate/currency_pair: Terms specific to contract type
+    
+    Important: Always check contract_type to route to correct risk calculation (IRS→DV01, FX→VaR)
     """
     if contracts_collection is not None:
         # Using MongoDB
@@ -376,16 +400,33 @@ async def write_risk_memo(
     breach_alert: bool = False,
 ) -> Dict:
     """
-    Write a risk memo for a contract.
+    Store risk analysis findings and recommendations for a contract.
+    
+    Use this tool to:
+    - Document breach analysis after threshold breach detection
+    - Record market shock impact assessments
+    - Persist portfolio-wide risk findings
+    - Create audit trail of risk decisions
     
     Args:
-        contract_id: Contract identifier
-        memo_title: Title of the memo
-        memo_content: Full memo content
-        breach_alert: Whether this memo contains a breach alert
+        contract_id: Contract identifier being analyzed
+        memo_title: Brief title (e.g., 'Threshold Breach - FX VaR Exceeded', 'Market Shock Assessment')
+        memo_content: Full analysis including:
+                     - What triggered the analysis
+                     - Risk metrics observed
+                     - Root cause assessment
+                     - Recommended actions (hedging, position reduction, monitoring)
+                     - Urgency level (critical/high/medium/low)
+        breach_alert: Set to True if memo documents a threshold breach or critical risk
     
     Returns:
-        Confirmation or error
+        Confirmation with memo_id for tracking and retrieval
+    
+    Best Practices:
+        - Include specific risk values and contract IDs
+        - Cite job_ids for traceability
+        - Be concise but thorough
+        - Recommend specific actions where possible
     """
     # Check if contract exists
     if contracts_collection is not None:

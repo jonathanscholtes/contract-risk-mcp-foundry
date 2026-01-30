@@ -65,13 +65,24 @@ mongodb_enabled = init_mongodb()
 @mcp.tool()
 async def get_fx_spot(currency_pair: str) -> Dict[str, Any]:
     """
-    Get the current FX spot rate for a currency pair from MongoDB.
+    Get the current FX spot rate for a currency pair.
+    
+    Use this tool to:
+    - Get current market prices for risk context
+    - Check if market data is available before submitting risk jobs
+    - Assess market conditions for breach analysis
     
     Args:
-        currency_pair: Currency pair (e.g., 'EURUSD')
+        currency_pair: Currency pair code (e.g., 'EURUSD', 'GBPJPY', 'AUDUSD')
     
     Returns:
-        Dictionary with spot rate and timestamp
+        Dictionary with:
+        - spot: Current FX spot rate
+        - as_of: Timestamp of the market data
+        - currency_pair: The requested pair
+    
+    Example:
+        - get_fx_spot('EURUSD') → {'spot': 1.0850, 'as_of': '2024-01-30T14:30:00Z'}
     """
     # Try MongoDB first
     if mongodb_enabled and market_collection is not None:
@@ -105,13 +116,26 @@ async def get_fx_spot(currency_pair: str) -> Dict[str, Any]:
 @mcp.tool()
 async def get_fx_volatility(currency_pair: str) -> Dict[str, Any]:
     """
-    Get the annualized volatility for a currency pair from MongoDB.
+    Get the current annualized FX volatility for a currency pair.
+    
+    Use this tool to:
+    - Understand current market volatility for risk assessment
+    - Compare volatility across currency pairs
+    - Assess market stress (volatility spikes indicate market stress)
     
     Args:
-        currency_pair: Currency pair (e.g., 'EURUSD')
+        currency_pair: Currency pair code (e.g., 'EURUSD', 'GBPJPY')
     
     Returns:
-        Dictionary with volatility and timestamp
+        Dictionary with:
+        - volatility: Annualized volatility (0.10 = 10% annualized)
+        - as_of: Timestamp of the market data
+        - currency_pair: The requested pair
+    
+    Interpretation:
+        - 0.08 = Low volatility (calm markets)
+        - 0.12 = Elevated volatility (some stress)
+        - 0.18+ = High volatility (market shock conditions)
     """
     # Try MongoDB first
     if mongodb_enabled and market_collection is not None:
@@ -145,10 +169,32 @@ async def get_fx_volatility(currency_pair: str) -> Dict[str, Any]:
 @mcp.tool()
 async def get_market_snapshot() -> Dict[str, Any]:
     """
-    Get a snapshot of all available market data from MongoDB.
+    Get a complete snapshot of all available market data (all currency pairs, rates, volatilities).
+    
+    Use this tool to:
+    - Assess overall market conditions in one call
+    - Check which currency pairs have available data
+    - Identify which currency pairs are experiencing volatility spikes
+    - Get comprehensive market context for portfolio risk assessment
     
     Returns:
-        Dictionary of all currency pairs with their spot rates and volatilities
+        Dictionary with:
+        - [currency_pair]: Dictionary with 'spot' rate and 'volatility' for each pair
+        - as_of: Timestamp of the snapshot
+    
+    Example Response:
+        {
+          'EURUSD': {'spot': 1.0850, 'volatility': 0.10},
+          'GBPJPY': {'spot': 168.50, 'volatility': 0.12},
+          'as_of': '2024-01-30T14:30:00Z'
+        }
+    
+    Workflow for Market Shock Assessment:
+        1. Call get_market_snapshot() to get current conditions
+        2. Compare volatilities - if any spike significantly, may indicate shock
+        3. Find affected contracts with search_contracts(currency_pair=...)
+        4. Submit fresh risk calculations for those contracts
+        5. Compare new VaR to historical patterns
     """
     snapshot = {}
     

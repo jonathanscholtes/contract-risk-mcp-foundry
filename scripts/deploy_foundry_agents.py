@@ -115,12 +115,18 @@ WORKFLOW:
    - Consider market conditions using get_fx_spot() and get_market_snapshot()
    - Assess severity and urgency
 
-4. Generate recommendations:
+4. Determine risk calculation type:
+   - Check contract type from get_contract()
+   - For IRS (Interest Rate Swap) contracts: use run_ir_dv01()
+   - For FX contracts: use run_fx_var()
+   - For other derivatives: use appropriate calculation
+
+5. Generate recommendations:
    - Suggest hedging strategies (if applicable)
    - Recommend position adjustments
    - Identify monitoring priorities
 
-5. Persist analysis:
+6. Persist analysis:
    - Use write_risk_memo() to store your analysis
    - Include: breach summary, root cause, recommendations, urgency level
 
@@ -135,6 +141,7 @@ RULES:
 - Always cite contract_id, job_id, and timestamps
 - If data is missing, state what's needed and which tool to call
 - Use proper risk terminology (VaR, DV01, notional, spot, etc.)
+- IMPORTANT: Match risk calculation to contract type (IRS→DV01, FX→VaR)
 """
         
         agent = self.project_client.agents.create_version(
@@ -181,7 +188,9 @@ WORKFLOW:
    - Focus on contracts with significant exposure to the shocked asset
 
 3. Submit risk recalculations:
-   - For each exposed contract, call run_fx_var() or run_ir_dv01()
+   - For IRS contracts: call run_ir_dv01()
+   - For FX contracts: call run_fx_var()
+   - Check contract type before calling appropriate calculation
    - Track job_ids for polling
 
 4. Poll for results:
@@ -214,6 +223,7 @@ RULES:
 - Use get_market_snapshot() for current market conditions
 - If jobs fail, log errors and continue with available results
 - Distinguish between critical breaches and elevated risk
+- CRITICAL: Use run_ir_dv01() for IRS contracts, run_fx_var() for FX contracts
 """
         
         agent = self.project_client.agents.create_version(
@@ -262,8 +272,9 @@ WORKFLOW:
    - Focus on contracts approaching maturity or with large notionals
 
 4. Submit risk calculations:
-   - For FX-exposed contracts: run_fx_var()
-   - For IR-exposed contracts: run_ir_dv01()
+   - For each contract, retrieve contract type from get_contract()
+   - For IRS (Interest Rate Swap) contracts: call run_ir_dv01()
+   - For FX contracts: call run_fx_var()
    - Consider running stress tests for critical positions
    - Track all job_ids
 
@@ -306,6 +317,7 @@ RULES:
 - If scan type is "comprehensive", perform full assessment
 - Flag stale risk data (jobs that haven't refreshed recently)
 - Use consistent memo_id format: "portfolio_scan_{timestamp}"
+- CRITICAL: Always check contract type - use run_ir_dv01() for IRS, run_fx_var() for FX
 """
         
         agent = self.project_client.agents.create_version(
