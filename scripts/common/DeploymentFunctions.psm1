@@ -213,9 +213,10 @@ function New-FederatedIdentityCredential {
         --name $credentialName `
         --identity-name $ManagedIdentityName `
         --resource-group $ResourceGroupName `
+        --output none `
         2>$null
     
-    if ($null -eq $existingCred) {
+    if ($LASTEXITCODE -ne 0) {
         Write-Host "Creating federated identity credential for $ServiceAccountName..." -ForegroundColor Yellow
         az identity federated-credential create `
             --name $credentialName `

@@ -15,6 +15,10 @@ param (
     [string]$AILocation
 )
 
+Set-StrictMode -Version Latest
+Set-Variable -Name ErrorActionPreference -Value 'Stop'
+
+
 # Import common functions
 Import-Module "$PSScriptRoot\scripts\common\DeploymentFunctions.psm1" -Force
 
@@ -48,7 +52,7 @@ Write-Host "`n=== PHASE 2: Container Image Builds ===" -ForegroundColor Magenta
 
 # PHASE 3: Deploy Kubernetes Platform
 Write-Host "`n=== PHASE 3: Kubernetes Platform Deployment ===" -ForegroundColor Magenta
-$k8sOutputs = & "$PSScriptRoot\scripts\Deploy-Kubernetes.ps1" `
+$k8sOutputArray = & "$PSScriptRoot\scripts\Deploy-Kubernetes.ps1" `
     -AksName $infraOutputs.aksName `
     -ResourceGroupName $infraOutputs.resourceGroupName `
     -ContainerRegistryName $infraOutputs.containerRegistryName `
@@ -56,6 +60,21 @@ $k8sOutputs = & "$PSScriptRoot\scripts\Deploy-Kubernetes.ps1" `
     -AiProjectEndpoint $infraOutputs.aiProjectEndpoint `
     -ManagedIdentityName $infraOutputs.managedIdentityName `
     -ManagedIdentityClientId $infraOutputs.managedIdentityClientId
+
+# Extract the last object from the array (which should be the PSCustomObject with service IPs)
+$k8sOutputs = $k8sOutputArray[-1]
+
+# Debug: Check what we got back
+if (-not $k8sOutputs) {
+    Write-Host "[ERROR] Deploy-Kubernetes.ps1 returned null or empty output" -ForegroundColor Red
+    throw "Kubernetes deployment script failed to return outputs"
+}
+
+if ($k8sOutputs.mcpContractsIP) {
+    Write-Host "[OK] Successfully retrieved MCP service IPs" -ForegroundColor Green
+} else {
+    Write-Host "[WARNING] MCP service IPs not available in returned object" -ForegroundColor Yellow
+}
 
 # PHASE 4: Deploy Foundry Agents
 if ($k8sOutputs.mcpContractsIP -and $k8sOutputs.mcpRiskIP -and $k8sOutputs.mcpMarketIP) {
@@ -73,7 +92,11 @@ if ($k8sOutputs.mcpContractsIP -and $k8sOutputs.mcpRiskIP -and $k8sOutputs.mcpMa
         Write-Host "  .\scripts\Deploy-FoundryAgents.ps1 -AiProjectEndpoint <ENDPOINT> -McpContractsIP <IP> ..." -ForegroundColor Gray
     }
 } else {
-    Write-Host "`n[WARNING] Could not retrieve all MCP service IPs. Skipping agent deployment." -ForegroundColor Yellow
+    Write-Host "`n[WARNING] MCP service IPs not yet assigned:" -ForegroundColor Yellow
+    if (-not $k8sOutputs.mcpContractsIP) { Write-Host "  - mcp-contracts: pending" -ForegroundColor Gray }
+    if (-not $k8sOutputs.mcpRiskIP) { Write-Host "  - mcp-risk: pending" -ForegroundColor Gray }
+    if (-not $k8sOutputs.mcpMarketIP) { Write-Host "  - mcp-market: pending" -ForegroundColor Gray }
+    Write-Host "Skipping agent deployment. Check service status with: kubectl get svc -n tools" -ForegroundColor Gray
 }
 
 # Deployment Summary

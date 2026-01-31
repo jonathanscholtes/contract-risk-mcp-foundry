@@ -47,41 +47,6 @@ resource gpt52Deployment 'Microsoft.CognitiveServices/accounts/deployments@2025-
   dependsOn: [gpt4oDeployment]
 }
 
-resource o3MiniDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = {
-  parent: account
-  name: 'o3-mini'
-  sku: {
-    capacity: 250
-    name: 'GlobalStandard'
-  }
-  properties: {
-    model: {
-      format: 'OpenAI'
-      name: 'o3-mini'
-      version: '2025-01-31'
-    }
-    versionUpgradeOption: 'OnceCurrentVersionExpired'
-    raiPolicyName: 'Microsoft.DefaultV2'
-  }
-  dependsOn: [gpt52Deployment]
-}
 
 
-resource embeddingDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = {
-  parent: account
-  name: 'text-embedding-3-large'
-  sku: {
-    capacity: 120
-    name: 'Standard'
-  }
-  properties: {
-    model: {
-      format: 'OpenAI'
-      name: 'text-embedding-3-large'
-      version: '1'
-    }
-    versionUpgradeOption: 'OnceCurrentVersionExpired'
-    raiPolicyName: 'Microsoft.DefaultV2'
-  }
-  dependsOn: [o3MiniDeployment]
-}
+

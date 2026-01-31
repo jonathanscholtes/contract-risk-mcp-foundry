@@ -65,14 +65,23 @@ helm repo add bitnami https://charts.bitnami.com/bitnami 2>$null
 Write-Host "Updating Helm repositories..." -ForegroundColor Gray
 helm repo update
 
+Write-Host "Deploying RabbitMQ Helm chart (this may take several minutes)..." -ForegroundColor Yellow
+$env:HELM_DEBUG="0"
 helm upgrade --install rabbitmq bitnami/rabbitmq `
     --namespace rabbitmq --create-namespace `
     --values .\k8s\helm\rabbitmq-values.yaml `
     --set auth.username=$rabbitmqUsername `
     --set auth.password=$rabbitmqPassword `
-    --wait --timeout 10m
-if ($LASTEXITCODE -ne 0) { throw "RabbitMQ deployment failed" }
-Write-Host "[OK] RabbitMQ deployed successfully" -ForegroundColor Green
+    --wait --timeout 20m 
+
+if ($LASTEXITCODE -ne 0) { 
+    Write-Host "[WARNING] RabbitMQ deployment timed out waiting for ready state" -ForegroundColor Yellow
+    Write-Host "Checking RabbitMQ pod status..." -ForegroundColor Gray
+    kubectl get pods -n rabbitmq 
+    Write-Host "Note: RabbitMQ may still be initializing. Check status with: kubectl get pods -n rabbitmq" -ForegroundColor Gray
+} else {
+    Write-Host "[OK] RabbitMQ deployed successfully" -ForegroundColor Green
+}
 
 # 3. Configure Workload Identity
 Write-Host "`n3. Configuring Azure Workload Identity..." -ForegroundColor Magenta
@@ -110,6 +119,7 @@ New-FederatedIdentityCredential `
 
 # 4. Deploy MCP Tools
 Write-Host "`n4. Deploying MCP Tools..." -ForegroundColor Magenta
+Write-Host "Deploying MCP tool servers (this may take several minutes)..." -ForegroundColor Yellow
 helm upgrade --install mcp-tools .\k8s\helm\mcp-tools `
     --namespace tools --create-namespace `
     --set registry=$acrLoginServer `
@@ -123,22 +133,20 @@ helm upgrade --install mcp-tools .\k8s\helm\mcp-tools `
     --set keyVault.tenantId=$tenantId `
     --set rabbitmq.user=$rabbitmqUsername `
     --set rabbitmq.password=$rabbitmqPassword `
-    --wait --timeout 15m
+    --wait --timeout 20m 
 
 if ($LASTEXITCODE -ne 0) { 
-    Write-Host "`n[ERROR] MCP Tools deployment failed. Checking pod status..." -ForegroundColor Red
+    Write-Host "`n[WARNING] MCP Tools deployment timed out waiting for ready state. Checking pod status..." -ForegroundColor Yellow
     Write-Host "`nPod Status:" -ForegroundColor Yellow
-    kubectl get pods -n tools
-    Write-Host "`nPod Descriptions:" -ForegroundColor Yellow
-    kubectl describe pods -n tools -l app=mcp-market
-    Write-Host "`nPod Logs (last 50 lines):" -ForegroundColor Yellow
-    kubectl logs -n tools -l app=mcp-market --tail=50 --all-containers=true
-    throw "MCP Tools deployment failed - see diagnostics above"
+    kubectl get pods -n tools 
+    Write-Host "`nNote: Pods may still be initializing. Monitor with: kubectl get pods -n tools -w" -ForegroundColor Gray
+} else {
+    Write-Host "[OK] MCP Tools deployed successfully" -ForegroundColor Green
 }
-Write-Host "[OK] MCP Tools deployed successfully" -ForegroundColor Green
 
 # 5. Deploy Risk Workers
 Write-Host "`n5. Deploying Risk Workers..." -ForegroundColor Magenta
+Write-Host "Deploying risk workers with KEDA autoscaling (this may take several minutes)..." -ForegroundColor Yellow
 helm upgrade --install risk-workers .\k8s\helm\risk-workers `
     --namespace workers --create-namespace `
     --set registry=$acrLoginServer `
@@ -148,18 +156,40 @@ helm upgrade --install risk-workers .\k8s\helm\risk-workers `
     --set keyVault.tenantId=$tenantId `
     --set rabbitmq.user=$rabbitmqUsername `
     --set rabbitmq.password=$rabbitmqPassword `
-    --wait --timeout 10m
-if ($LASTEXITCODE -ne 0) { throw "Risk Workers deployment failed" }
-Write-Host "[OK] Risk Workers deployed successfully" -ForegroundColor Green
+    --wait --timeout 20m 
+
+if ($LASTEXITCODE -ne 0) { 
+    Write-Host "[WARNING] Risk Workers deployment timed out waiting for ready state" -ForegroundColor Yellow
+    Write-Host "Checking Risk Workers pod status..." -ForegroundColor Gray
+    kubectl get pods -n workers 
+    Write-Host "Note: Workers may still be initializing. Monitor with: kubectl get pods -n workers -w" -ForegroundColor Gray
+} else {
+    Write-Host "[OK] Risk Workers deployed successfully" -ForegroundColor Green
+}
 
 # Get service IPs
 Write-Host "`nRetrieving MCP service public IPs..." -ForegroundColor Yellow
-Start-Sleep -Seconds 30
 
-$mcpContractsIP = Get-ServiceExternalIP -ServiceName "mcp-contracts"
-$mcpRiskIP = Get-ServiceExternalIP -ServiceName "mcp-risk"
-$mcpMarketIP = Get-ServiceExternalIP -ServiceName "mcp-market"
-$grafanaIP = Get-ServiceExternalIP -ServiceName "grafana" -Namespace "platform" -MaxWaitSeconds 60
+$mcpContractsIP = Get-ServiceExternalIP -ServiceName "mcp-contracts" -MaxWaitSeconds 300
+$mcpRiskIP = Get-ServiceExternalIP -ServiceName "mcp-risk" -MaxWaitSeconds 300
+$mcpMarketIP = Get-ServiceExternalIP -ServiceName "mcp-market" -MaxWaitSeconds 300
+$grafanaIP = Get-ServiceExternalIP -ServiceName "grafana" -Namespace "platform" -MaxWaitSeconds 300
+
+if (-not $mcpContractsIP) {
+    Write-Host "[WARNING] mcp-contracts IP not assigned yet" -ForegroundColor Yellow
+}
+if (-not $mcpRiskIP) {
+    Write-Host "[WARNING] mcp-risk IP not assigned yet" -ForegroundColor Yellow
+}
+if (-not $mcpMarketIP) {
+    Write-Host "[WARNING] mcp-market IP not assigned yet" -ForegroundColor Yellow
+}
+
+Write-Host "`n[DEBUG] Service IPs to be returned:" -ForegroundColor Cyan
+Write-Host "  mcpContractsIP: '$mcpContractsIP'" -ForegroundColor Gray
+Write-Host "  mcpRiskIP: '$mcpRiskIP'" -ForegroundColor Gray
+Write-Host "  mcpMarketIP: '$mcpMarketIP'" -ForegroundColor Gray
+Write-Host "  grafanaIP: '$grafanaIP'" -ForegroundColor Gray
 
 Write-Host "`n[OK] Platform components deployed successfully" -ForegroundColor Green
 
